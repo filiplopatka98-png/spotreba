@@ -610,6 +610,13 @@
     background: var(--line);
     margin: 4px 0;
   }
+  .hh-item.shared { border-left: 2px solid var(--accent-2, #4cc9f0); padding-left: 10px; }
+  .hh-lock { font-size: 11px; opacity: 0.7; margin-left: 4px; }
+  .hh-item .hh-item-owner {
+    font-size: 11px;
+    color: var(--ink-3);
+    font-style: italic;
+  }
   .hh-add {
     color: var(--accent);
     font-size: 13px;
@@ -1108,6 +1115,85 @@
     margin-top: 4px;
   }
 
+  /* Phase C — read-only sharing */
+  .ro-banner {
+    display: none;
+    margin: 0 0 16px 0;
+    padding: 10px 14px;
+    background: rgba(76, 201, 240, 0.08);
+    border: 1px solid rgba(76, 201, 240, 0.4);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .ro-banner strong { color: var(--ink); }
+  body.ro-shared .ro-banner { display: block; }
+
+  /* Skry mutácie a € v read-only móde */
+  body.ro-shared #btnAddTop,
+  body.ro-shared #btnReplaceDevice,
+  body.ro-shared .meter-card .cost,
+  body.ro-shared .row-btn[data-action="edit"],
+  body.ro-shared .row-btn[data-action="delete"],
+  body.ro-shared #yearlyCard .cost,
+  body.ro-shared .cost { display: none !important; }
+  body.ro-shared .meter-card { cursor: default; }
+
+  /* Sharing card v Settings */
+  .share-section { margin-top: 16px; }
+  .share-section h4 {
+    font-size: 13px;
+    color: var(--ink-2);
+    font-weight: 500;
+    margin: 0 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .share-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+  .share-row-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+  .share-row-name { font-weight: 500; font-size: 14px; }
+  .share-row-meta { font-size: 11px; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; }
+  .share-claim {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 12px;
+  }
+  .share-claim input {
+    flex: 1;
+    padding: 8px 10px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  .share-empty { font-size: 13px; color: var(--ink-3); padding: 10px 0; }
+  .share-code-display {
+    margin: 16px 0;
+    padding: 18px;
+    background: var(--bg-2);
+    border: 1px dashed var(--accent);
+    border-radius: 8px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    user-select: all;
+  }
+
 </style>
 </head>
 <body>
@@ -1178,6 +1264,10 @@
     <button class="tab" data-tab="anomalies">Anomálie</button>
     <button class="tab" data-tab="settings">Nastavenia</button>
   </nav>
+
+  <div class="ro-banner" id="roBanner">
+    📖 <strong>Iba na čítanie</strong> · Vlastník: <span id="roOwnerLabel">—</span>
+  </div>
 
   <!-- DASHBOARD -->
   <section id="tab-dashboard">
@@ -1311,6 +1401,20 @@
     </div>
 
     <div class="card">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Zdieľanie domov</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Daj prístup iným k tvojmu domu (iba na čítanie) cez jednorazový kód, alebo si zaregistruj kód, ktorý ti niekto poslal.
+      </p>
+      <div id="sharingCardBody">
+        <div class="share-empty">Načítavam…</div>
+      </div>
+      <div class="share-claim">
+        <input type="text" id="shareCodeInput" placeholder="SHARE-XXXX-XXXX" autocomplete="off">
+        <button class="btn btn-primary" id="btnClaimCode">Aktivovať</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Prahy upozornení</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Ak je mesačná spotreba o viac než X % vyššia oproti priemeru rovnakého mesiaca z predchádzajúcich rokov, vznikne upozornenie.
@@ -1402,6 +1506,21 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btnHhEditCancel">Zrušiť</button>
       <button class="btn btn-primary" id="btnHhEditSave">Uložiť</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHARE CODE DISPLAY MODAL -->
+<div id="shareCodeModal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3>Pozvánka pre <span id="shareCodeHhName">—</span></h3>
+    <p class="modal-sub">Pošli tento kód osobe, ktorej chceš dať prístup. Kód je jednorazový.</p>
+
+    <div class="share-code-display" id="shareCodeText">SHARE-XXXX-XXXX</div>
+
+    <div class="modal-actions">
+      <button class="btn" id="btnShareCodeCopy">📋 Skopírovať</button>
+      <button class="btn btn-primary" id="btnShareCodeClose">Zatvoriť</button>
     </div>
   </div>
 </div>
@@ -1658,27 +1777,51 @@ async function pullFromCloud() {
     if (rs.error) throw rs.error;
     if (us.error) throw us.error;
 
-    // Premapuj cloud rows na lokálnu schému, pridaj/aktualizuj v Dexie
+    // Premapuj cloud rows na lokálnu schému, pridaj/aktualizuj v Dexie.
+    // RLS vracia VLASTNÉ aj ZDIEĽANÉ domy — rozlíšime ich podľa user_id.
     const cloudHhIds = new Set();
+    const sharedOwnerIds = new Set();
+    const localIdToOwner = {};
     for (const ch of hh.data) {
       cloudHhIds.add(ch.id);
+      const isShared = ch.user_id !== Sync.user.id;
+      if (isShared) sharedOwnerIds.add(ch.user_id);
       let localId = Sync.rev.households[ch.id];
       if (localId == null) {
-        // nový dom z cloudu
         localId = await db.households.add({
           name: ch.name,
           address: ch.address || '',
           enabledMeters: ch.enabled_meters || [],
-          createdAt: ch.created_at
+          createdAt: ch.created_at,
+          is_shared: isShared,
+          owner_label: null
         });
       } else {
         await db.households.update(localId, {
           name: ch.name,
           address: ch.address || '',
-          enabledMeters: ch.enabled_meters || []
+          enabledMeters: ch.enabled_meters || [],
+          is_shared: isShared
         });
       }
+      if (isShared) localIdToOwner[localId] = ch.user_id;
       setMap('households', localId, ch.id);
+    }
+
+    // Resolve owner emails pre zdieľané domy (jeden RPC call, batch).
+    if (sharedOwnerIds.size > 0) {
+      const { data: emails, error: eErr } = await sb.rpc('get_user_emails', {
+        p_ids: Array.from(sharedOwnerIds)
+      });
+      if (!eErr && emails) {
+        const idToEmail = {};
+        for (const row of emails) idToEmail[row.id] = row.email;
+        for (const [localId, ownerId] of Object.entries(localIdToOwner)) {
+          await db.households.update(parseInt(localId), {
+            owner_label: idToEmail[ownerId] || ownerId
+          });
+        }
+      }
     }
 
     // METERS
@@ -1827,9 +1970,11 @@ async function pushAll() {
   setSyncStatus('syncing');
 
   try {
-    // 1) HOUSEHOLDS
+    // 1) HOUSEHOLDS — push len vlastné, zdieľané (is_shared) sú read-only
     const allHh = await db.households.toArray();
+    const sharedHhLocalIds = new Set(allHh.filter(h => h.is_shared).map(h => h.id));
     for (const h of allHh) {
+      if (h.is_shared) continue;
       const cloudId = Sync.maps.households[h.id];
       const payload = {
         user_id: Sync.user.id,
@@ -1847,9 +1992,10 @@ async function pushAll() {
       }
     }
 
-    // 2) METERS
+    // 2) METERS — preskoč meradlá zo zdieľaných domov
     const allMeters = await db.meters.toArray();
     for (const m of allMeters) {
+      if (sharedHhLocalIds.has(m.householdId)) continue;
       const cloudHhId = Sync.maps.households[m.householdId];
       if (cloudHhId == null) continue;
       const cloudId = Sync.maps.meters[m.pk];
@@ -1869,9 +2015,10 @@ async function pushAll() {
       }
     }
 
-    // 3) DEVICES
+    // 3) DEVICES — preskoč zariadenia zo zdieľaných domov
     const allDevices = await db.devices.toArray();
     for (const d of allDevices) {
+      if (sharedHhLocalIds.has(d.householdId)) continue;
       const cloudHhId = Sync.maps.households[d.householdId];
       const cloudMeterId = Sync.maps.meters[d.meterPk];
       if (cloudHhId == null || cloudMeterId == null) continue;
@@ -1894,11 +2041,12 @@ async function pushAll() {
       }
     }
 
-    // 4) READINGS - bulk insert pre rýchlosť
+    // 4) READINGS — bulk insert pre rýchlosť, preskoč odpočty zo zdieľaných domov
     const allReadings = await db.readings.toArray();
     const toInsert = [];
     const toUpdate = [];
     for (const r of allReadings) {
+      if (sharedHhLocalIds.has(r.householdId)) continue;
       const cloudHhId = Sync.maps.households[r.householdId];
       const cloudMeterId = Sync.maps.meters[r.meterPk];
       const cloudDeviceId = Sync.maps.devices[r.deviceId];
@@ -2116,6 +2264,14 @@ db.version(1).stores({
   readings: '++id, [householdId+meterPk+date], [meterPk+date], date, deviceId, householdId, meterPk',
   settings: 'key'
 });
+// v2: pridáva is_shared + owner_label na households (Phase C — read-only zdieľanie).
+// Sharing rows (household_shares) sa čítajú/zapisujú priamo z/do Supabase, lokálne ich necachujeme.
+db.version(2).stores({
+  households: '++id, name'
+}).upgrade(tx => tx.table('households').toCollection().modify(h => {
+  if (h.is_shared === undefined) h.is_shared = false;
+  if (h.owner_label === undefined) h.owner_label = null;
+}));
 
 /**
  * Ak nová DB je prázdna a stará DB existuje s dátami,
@@ -3291,6 +3447,7 @@ async function renderAnomalies() {
 let addPickedMeter = null; // teraz pk (number)
 
 function openAddModal(presetMeterPk = null) {
+  if (!ensureWritable()) return;
   document.getElementById('addModal').classList.remove('hidden');
   document.getElementById('addDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('addValue').value = '';
@@ -3419,6 +3576,7 @@ async function saveReading() {
    ============================================================= */
 
 function openDeviceModal() {
+  if (!ensureWritable()) return;
   document.getElementById('deviceModal').classList.remove('hidden');
   document.getElementById('devDate').value = new Date().toISOString().split('T')[0];
   // populate meter select
@@ -3915,7 +4073,7 @@ function switchTab(tab) {
   if (tab === 'charts') renderChart();
   if (tab === 'heatmap') renderHeatmap();
   if (tab === 'anomalies') renderAnomalies();
-  if (tab === 'settings') { loadSettings(); renderHouseholdsList(); }
+  if (tab === 'settings') { loadSettings(); renderHouseholdsList(); renderSharingCard(); }
 }
 
 async function loadSettings() {
@@ -3952,10 +4110,16 @@ async function renderHouseholdSwitcher() {
   dropdown.innerHTML = '';
   for (const h of all) {
     const item = document.createElement('div');
-    item.className = 'hh-item' + (h.id === State.activeHouseholdId ? ' active' : '');
+    item.className = 'hh-item'
+      + (h.id === State.activeHouseholdId ? ' active' : '')
+      + (h.is_shared ? ' shared' : '');
+    const lock = h.is_shared ? '<span class="hh-lock">🔒</span>' : '';
+    const ownerLine = (h.is_shared && h.owner_label)
+      ? `<div class="hh-item-owner">vlastník: ${h.owner_label}</div>` : '';
     item.innerHTML = `
-      <div class="hh-item-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${h.name}</div>
+      <div class="hh-item-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${h.name}${lock}</div>
       ${h.address ? `<div class="hh-item-addr">${h.address}</div>` : ''}
+      ${ownerLine}
     `;
     item.addEventListener('click', async () => {
       await switchHousehold(h.id);
@@ -3981,6 +4145,7 @@ async function renderHouseholdSwitcher() {
 async function switchHousehold(hhId) {
   await db.settings.put({ key: 'activeHousehold', value: hhId });
   await loadActiveHousehold();
+  applyReadOnlyMode();
   // reset selectory aby sa znovu populated
   const cs = document.getElementById('chartMeter');
   if (cs) cs.dataset.hh = '';
@@ -3989,7 +4154,7 @@ async function switchHousehold(hhId) {
   await refresh();
   await renderHouseholdSwitcher();
   toast('Aktívny dom: ' + State.household.name);
-  schedulePush();
+  if (!State.household.is_shared) schedulePush();
 }
 
 let wizardEditingId = null;
@@ -4062,17 +4227,20 @@ async function renderHouseholdsList() {
     const meters = await db.meters.where('householdId').equals(h.id).toArray();
     const readingCount = await db.readings.where('householdId').equals(h.id).count();
     const item = document.createElement('div');
-    item.className = 'hh-list-item';
+    item.className = 'hh-list-item' + (h.is_shared ? ' shared' : '');
+    const sharedTag = h.is_shared ? ` <span class="hh-lock" title="Zdieľaný — iba na čítanie">🔒</span>` : '';
+    const ownerLine = (h.is_shared && h.owner_label) ? ` · vlastník ${h.owner_label}` : '';
+    const actions = h.is_shared
+      ? `${h.id !== State.activeHouseholdId ? `<button class="row-btn" data-action="switch" data-id="${h.id}" title="Aktivovať">→</button>` : ''}`
+      : `${h.id !== State.activeHouseholdId ? `<button class="row-btn" data-action="switch" data-id="${h.id}" title="Aktivovať">→</button>` : ''}
+         <button class="row-btn" data-action="rename" data-id="${h.id}" title="Premenovať">✎</button>
+         <button class="row-btn danger" data-action="delete" data-id="${h.id}" title="Zmazať">×</button>`;
     item.innerHTML = `
       <div class="hh-li-info">
-        <span class="hh-li-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${h.name}</span>
-        <span class="hh-li-meta">${h.address || 'bez adresy'} · ${meters.length} meradiel · ${readingCount} odpočtov</span>
+        <span class="hh-li-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${h.name}${sharedTag}</span>
+        <span class="hh-li-meta">${h.address || 'bez adresy'} · ${meters.length} meradiel · ${readingCount} odpočtov${ownerLine}</span>
       </div>
-      <div class="hh-li-actions">
-        ${h.id !== State.activeHouseholdId ? `<button class="row-btn" data-action="switch" data-id="${h.id}" title="Aktivovať">→</button>` : ''}
-        <button class="row-btn" data-action="rename" data-id="${h.id}" title="Premenovať">✎</button>
-        <button class="row-btn danger" data-action="delete" data-id="${h.id}" title="Zmazať">×</button>
-      </div>
+      <div class="hh-li-actions">${actions}</div>
     `;
     list.appendChild(item);
   }
@@ -4114,12 +4282,15 @@ async function saveHouseholdEdit() {
 }
 
 async function deleteHousehold(id) {
-  const all = await db.households.toArray();
-  if (all.length === 1) { toast('Nemôžeš zmazať jediný dom', true); return; }
   const h = await db.households.get(id);
+  if (!h) return;
+  if (h.is_shared) { toast('Zdieľaný dom nemôžeš zmazať — odstráň ho zo zoznamu cez „Zdieľanie domov".', true); return; }
+  const all = await db.households.toArray();
+  const ownedCount = all.filter(x => !x.is_shared).length;
+  if (ownedCount === 1) { toast('Nemôžeš zmazať jediný vlastný dom', true); return; }
   if (!confirm(`Naozaj zmazať dom "${h.name}" so všetkými dátami? Nedá sa vrátiť späť.`)) return;
 
-  // cloud delete (cascade)
+  // cloud delete (cascade — zmaže aj všetky jeho shares)
   await cloudDeleteHousehold(id);
 
   // local delete
@@ -4129,13 +4300,211 @@ async function deleteHousehold(id) {
   await db.households.delete(id);
 
   if (State.activeHouseholdId === id) {
-    const remaining = await db.households.toArray();
-    await switchHousehold(remaining[0].id);
+    const remaining = (await db.households.toArray()).filter(h => !h.is_shared);
+    if (remaining.length > 0) await switchHousehold(remaining[0].id);
   } else {
     await renderHouseholdsList();
     await renderHouseholdSwitcher();
   }
   toast('Dom zmazaný');
+}
+
+/* =============================================================
+   PHASE C — read-only zdieľanie domov
+   ============================================================= */
+
+const SHARE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'; // bez I,L,O,U,0,1
+function generateShareCode() {
+  const chunk = () => Array.from({ length: 4 }, () =>
+    SHARE_ALPHABET[Math.floor(Math.random() * SHARE_ALPHABET.length)]
+  ).join('');
+  return `SHARE-${chunk()}-${chunk()}`;
+}
+
+function applyReadOnlyMode() {
+  const isShared = !!(State.household && State.household.is_shared);
+  document.body.classList.toggle('ro-shared', isShared);
+  const lbl = document.getElementById('roOwnerLabel');
+  if (isShared && lbl) lbl.textContent = State.household.owner_label || 'neznámy';
+}
+
+function ensureWritable() {
+  if (State.household && State.household.is_shared) {
+    toast('Tento dom je iba na čítanie', true);
+    return false;
+  }
+  return true;
+}
+
+async function renderSharingCard() {
+  const body = document.getElementById('sharingCardBody');
+  if (!body || !Sync.user) return;
+  body.innerHTML = '<div class="share-empty">Načítavam…</div>';
+
+  const { data: shares, error } = await sb.from('household_shares').select('*').order('created_at');
+  if (error) {
+    body.innerHTML = `<div class="share-empty">Chyba: ${error.message}</div>`;
+    return;
+  }
+  const owned = shares.filter(s => s.owner_id === Sync.user.id);
+  const incoming = shares.filter(s => s.recipient_id === Sync.user.id);
+
+  const otherIds = new Set();
+  owned.forEach(s => { if (s.recipient_id) otherIds.add(s.recipient_id); });
+  incoming.forEach(s => otherIds.add(s.owner_id));
+  const idToEmail = {};
+  if (otherIds.size > 0) {
+    const { data: emails } = await sb.rpc('get_user_emails', { p_ids: Array.from(otherIds) });
+    if (emails) for (const r of emails) idToEmail[r.id] = r.email;
+  }
+
+  const allHh = await db.households.toArray();
+  const cloudIdToHh = {};
+  for (const h of allHh) {
+    const cid = Sync.maps.households[h.id];
+    if (cid) cloudIdToHh[cid] = h;
+  }
+  const ownedByHh = {};
+  for (const s of owned) (ownedByHh[s.household_id] = ownedByHh[s.household_id] || []).push(s);
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  let html = '<div class="share-section"><h4>Zdieľam s inými</h4>';
+  const ownedHh = allHh.filter(h => !h.is_shared);
+  if (ownedHh.length === 0) {
+    html += '<div class="share-empty">Žiadne vlastné domy.</div>';
+  } else {
+    for (const h of ownedHh) {
+      const cid = Sync.maps.households[h.id];
+      const hShares = (cid && ownedByHh[cid]) ? ownedByHh[cid] : [];
+      html += `<div class="share-row"><div class="share-row-info">
+        <div class="share-row-name">${esc(h.name)}</div>`;
+      if (hShares.length === 0) {
+        html += `<div class="share-row-meta">Zatiaľ nezdieľané</div>`;
+      } else {
+        for (const s of hShares) {
+          if (s.claimed_at) {
+            const email = idToEmail[s.recipient_id] || s.recipient_id;
+            html += `<div class="share-row-meta">${esc(email)} · od ${new Date(s.claimed_at).toLocaleDateString('sk-SK')}
+              <button class="row-btn danger" data-revoke="${s.id}" title="Zrušiť zdieľanie">×</button></div>`;
+          } else {
+            html += `<div class="share-row-meta">Čaká na claim: ${esc(s.code)}
+              <button class="row-btn danger" data-revoke="${s.id}" title="Zrušiť pozvánku">×</button></div>`;
+          }
+        }
+      }
+      html += `</div><button class="btn" data-generate="${h.id}">+ Pozvánka</button></div>`;
+    }
+  }
+  html += '</div>';
+
+  html += '<div class="share-section"><h4>Iní zdieľajú so mnou</h4>';
+  if (incoming.length === 0) {
+    html += '<div class="share-empty">Nikto ti zatiaľ nič nezdieľa.</div>';
+  } else {
+    for (const s of incoming) {
+      const hh = cloudIdToHh[s.household_id];
+      const hhName = hh ? hh.name : `(dom #${s.household_id})`;
+      const ownerEmail = idToEmail[s.owner_id] || s.owner_id;
+      html += `<div class="share-row"><div class="share-row-info">
+        <div class="share-row-name">${esc(hhName)}</div>
+        <div class="share-row-meta">Vlastník: ${esc(ownerEmail)}</div>
+      </div><button class="btn btn-ghost" data-leave="${s.id}">Odstrániť</button></div>`;
+    }
+  }
+  html += '</div>';
+
+  body.innerHTML = html;
+  body.querySelectorAll('button[data-generate]').forEach(b =>
+    b.addEventListener('click', () => generateInvite(parseInt(b.dataset.generate))));
+  body.querySelectorAll('button[data-revoke]').forEach(b =>
+    b.addEventListener('click', () => revokeShare(parseInt(b.dataset.revoke))));
+  body.querySelectorAll('button[data-leave]').forEach(b =>
+    b.addEventListener('click', () => leaveShare(parseInt(b.dataset.leave))));
+}
+
+async function generateInvite(localHhId) {
+  const cloudHhId = Sync.maps.households[localHhId];
+  if (!cloudHhId) { toast('Dom ešte nie je nasynchronizovaný — počkaj sekundu a skús znova.', true); return; }
+  const h = await db.households.get(localHhId);
+  if (!h) return;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateShareCode();
+    const { error } = await sb.from('household_shares').insert({
+      household_id: cloudHhId,
+      owner_id: Sync.user.id,
+      code
+    });
+    if (!error) {
+      document.getElementById('shareCodeHhName').textContent = h.name;
+      document.getElementById('shareCodeText').textContent = code;
+      document.getElementById('shareCodeModal').classList.remove('hidden');
+      await renderSharingCard();
+      return;
+    }
+    if (error.code !== '23505') {  // 23505 = unique violation → retry
+      toast('Chyba pri generovaní: ' + error.message, true);
+      return;
+    }
+  }
+  toast('Nepodarilo sa vygenerovať unikátny kód po 5 pokusoch', true);
+}
+
+async function claimCode() {
+  const input = document.getElementById('shareCodeInput');
+  const code = input.value.trim().toUpperCase();
+  if (!code) { toast('Zadaj kód', true); return; }
+
+  const { error } = await sb.rpc('claim_share_code', { p_code: code });
+  if (error) {
+    let msg = error.message || 'Chyba';
+    if (msg.includes('invalid_or_claimed')) msg = 'Kód neexistuje alebo už bol použitý.';
+    else if (msg.includes('self_claim')) msg = 'Nemôžeš claim-núť svoj vlastný kód.';
+    toast(msg, true);
+    return;
+  }
+  input.value = '';
+  toast('Kód aktivovaný — sťahujem dom…');
+  try {
+    await pullFromCloud();
+    await loadActiveHousehold();
+    await renderHouseholdSwitcher();
+    await renderSharingCard();
+    await renderHouseholdsList();
+    toast('Hotovo — dom je v switcheri');
+  } catch (e) {
+    toast('Pull zlyhal: ' + e.message, true);
+  }
+}
+
+async function revokeShare(shareId) {
+  if (!confirm('Naozaj zrušiť toto zdieľanie? Druhá strana okamžite stratí prístup.')) return;
+  const { error } = await sb.from('household_shares').delete().eq('id', shareId);
+  if (error) { toast('Chyba: ' + error.message, true); return; }
+  toast('Zrušené');
+  await renderSharingCard();
+}
+
+async function leaveShare(shareId) {
+  if (!confirm('Odstrániť tento dom zo svojho zoznamu?')) return;
+  const { error } = await sb.from('household_shares').delete().eq('id', shareId);
+  if (error) { toast('Chyba: ' + error.message, true); return; }
+  toast('Odstránené — sťahujem zmeny…');
+  try {
+    await pullFromCloud();  // purge logika v pull-e zmaže lokálny dom
+    if (State.activeHouseholdId) {
+      const still = await db.households.get(State.activeHouseholdId);
+      if (!still) {
+        const own = (await db.households.toArray()).find(h => !h.is_shared);
+        if (own) await switchHousehold(own.id);
+        else await loadActiveHousehold();
+      }
+    }
+    await renderHouseholdSwitcher();
+    await renderSharingCard();
+    await renderHouseholdsList();
+  } catch (e) { /* status handled */ }
 }
 
 // Household switcher
@@ -4160,6 +4529,24 @@ document.getElementById('btnHhEditCancel').addEventListener('click', () => {
   editingHouseholdId = null;
 });
 document.getElementById('btnHhEditSave').addEventListener('click', saveHouseholdEdit);
+
+// Phase C — sharing handlers
+document.getElementById('btnClaimCode').addEventListener('click', claimCode);
+document.getElementById('shareCodeInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') claimCode();
+});
+document.getElementById('btnShareCodeClose').addEventListener('click', () => {
+  document.getElementById('shareCodeModal').classList.add('hidden');
+});
+document.getElementById('btnShareCodeCopy').addEventListener('click', async () => {
+  const code = document.getElementById('shareCodeText').textContent;
+  try {
+    await navigator.clipboard.writeText(code);
+    toast('Kód skopírovaný do schránky');
+  } catch (e) {
+    toast('Skopíruj manuálne (Ctrl+C)', true);
+  }
+});
 
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => switchTab(t.dataset.tab));
@@ -4300,6 +4687,7 @@ async function startApp() {
 
   // 5) Vyrenderuj UI
   hideAuthScreen();
+  applyReadOnlyMode();
   await renderHouseholdSwitcher();
   await renderDashboard();
   await renderDashboardCosts();
