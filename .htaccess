@@ -1,0 +1,55 @@
+# =============================================================
+# Spotreba app — Apache config pre WebSupport
+# =============================================================
+
+# Vynúť HTTPS (Supabase auth cookies vyžadujú secure connection)
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+# Pri prístupe na / servuj index.html
+DirectoryIndex index.html
+
+# =============================================================
+# Cache pre statické súbory (appka je single-file, takže index.html
+# nech je revalidovaný často, externé CDN si riešia samé)
+# =============================================================
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/html "access plus 0 seconds"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+</IfModule>
+
+<IfModule mod_headers.c>
+    # index.html — vždy revalidovať
+    <FilesMatch "\.html$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </FilesMatch>
+
+    # Bezpečnostné hlavičky
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# =============================================================
+# Gzip kompresia
+# =============================================================
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json
+</IfModule>
+
+# =============================================================
+# Zakáž indexovanie zložky
+# =============================================================
+Options -Indexes
+
+# =============================================================
+# Custom 404
+# =============================================================
+ErrorDocument 404 /index.html

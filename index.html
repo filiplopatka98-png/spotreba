@@ -1,0 +1,4366 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotreba — Tracker energií</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+<link rel="manifest" href="data:application/manifest+json;base64,ew0KICAibmFtZSI6ICJTcG90cmViYSDigJQgVHJhY2tlciBlbmVyZ2nDrSIsDQogICJzaG9ydF9uYW1lIjogIlNwb3RyZWJhIiwNCiAgInN0YXJ0X3VybCI6ICIuIiwNCiAgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsDQogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMwZTBmMTAiLA0KICAidGhlbWVfY29sb3IiOiAiIzBlMGYxMCIsDQogICJkZXNjcmlwdGlvbiI6ICJUcmFja2VyIHNwb3RyZWJ5IGVuZXJnaWkiLA0KICAiaWNvbnMiOiBbXQ0KfQ==">
+<meta name="theme-color" content="#0e0f10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  :root {
+    --bg: #0e0f10;
+    --bg-2: #15171a;
+    --bg-3: #1d2024;
+    --line: #2a2e34;
+    --line-2: #383d44;
+    --ink: #f4ede4;
+    --ink-2: #b8b3a9;
+    --ink-3: #75726c;
+    --accent: #c8ff3e;
+    --warn: #ffb547;
+    --bad: #ff5d5d;
+    --good: #4ade80;
+    --elec-in: #ffb547;
+    --elec-out: #c8ff3e;
+    --water: #4cc9f0;
+    --gas: #f87171;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 15% 0%, rgba(200, 255, 62, 0.04), transparent 40%),
+      radial-gradient(circle at 90% 80%, rgba(76, 201, 240, 0.03), transparent 35%),
+      var(--bg);
+  }
+
+  .app {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+
+  /* HEADER */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-bottom: 28px;
+    margin-bottom: 36px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .brand h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-size: 38px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .brand h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+  .brand .sub {
+    font-size: 12px;
+    color: var(--ink-3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .header-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .btn {
+    appearance: none;
+    border: 1px solid var(--line-2);
+    background: transparent;
+    color: var(--ink);
+    padding: 9px 16px;
+    border-radius: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn:hover { border-color: var(--ink); background: var(--bg-2); }
+  .btn-primary {
+    background: var(--accent);
+    color: #0a0a0a;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: #b6e836; border-color: #b6e836; }
+  .btn-ghost { border-color: transparent; color: var(--ink-2); }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--line-2); }
+  .btn-danger { color: var(--bad); }
+  .btn-danger:hover { border-color: var(--bad); }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab {
+    padding: 10px 16px;
+    background: none;
+    border: none;
+    color: var(--ink-3);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.15s;
+    font-family: inherit;
+  }
+  .tab:hover { color: var(--ink-2); }
+  .tab.active { color: var(--ink); }
+  .tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+
+  /* DASHBOARD METER CARDS */
+  .meters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+  .meter-card {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .meter-card:hover {
+    border-color: var(--line-2);
+    transform: translateY(-2px);
+  }
+  .meter-card .meter-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .meter-card[data-type="electricity_in"] .meter-bar { background: var(--elec-in); }
+  .meter-card[data-type="electricity_out"] .meter-bar { background: var(--elec-out); }
+  .meter-card[data-type="water"] .meter-bar { background: var(--water); }
+  .meter-card[data-type="gas"] .meter-bar { background: var(--gas); }
+
+  .meter-label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 12px;
+  }
+  .meter-value {
+    font-family: 'Fraunces', serif;
+    font-size: 42px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .meter-unit {
+    font-size: 14px;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .meter-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--ink-2);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .delta.up { background: rgba(255, 93, 93, 0.12); color: var(--bad); }
+  .delta.down { background: rgba(74, 222, 128, 0.12); color: var(--good); }
+  .delta.flat { background: var(--bg-3); color: var(--ink-2); }
+
+  /* SECTION TITLE */
+  .section-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 0 0 16px;
+  }
+  .section-title h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-size: 24px;
+    letter-spacing: -0.01em;
+  }
+  .section-title .hint {
+    font-size: 12px;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* CARDS */
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .card + .card { margin-top: 16px; }
+
+  /* CHART AREA */
+  .chart-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .chart-tools label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .chart-tools select {
+    background: var(--bg-3);
+    color: var(--ink);
+    border: 1px solid var(--line-2);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .chart-tools input[type="checkbox"] { accent-color: var(--accent); }
+  .chart-wrap {
+    height: 380px;
+    position: relative;
+  }
+
+  /* TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  th, td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+  }
+  th {
+    color: var(--ink-3);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    background: var(--bg-3);
+    position: sticky;
+    top: 0;
+  }
+  td.num { text-align: right; }
+  th.num { text-align: right; }
+  tr:hover td { background: var(--bg-3); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--bg-3);
+    color: var(--ink-2);
+  }
+  .badge.warn { background: rgba(255, 181, 71, 0.15); color: var(--warn); }
+  .badge.bad { background: rgba(255, 93, 93, 0.15); color: var(--bad); }
+
+  .table-wrap {
+    max-height: 540px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: fadeIn 0.15s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 28px;
+    width: 100%;
+    max-width: 480px;
+    margin: 16px;
+    animation: slideUp 0.2s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-size: 24px;
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
+  }
+  .modal .modal-sub {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-bottom: 22px;
+  }
+
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+    margin-bottom: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    color: var(--ink);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+  }
+  .field input:focus, .field select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .field-hint {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .field-hint.warn { color: var(--warn); }
+  .field-hint.bad { color: var(--bad); }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 24px;
+  }
+
+  /* METER PICKER */
+  .meter-picker {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .meter-pick {
+    appearance: none;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    color: var(--ink);
+    padding: 14px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    transition: all 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .meter-pick:hover { border-color: var(--ink-2); }
+  .meter-pick.active {
+    border-color: var(--accent);
+    background: rgba(200, 255, 62, 0.05);
+  }
+  .meter-pick .pick-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .meter-pick .pick-name {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  /* ANOMALIES */
+  .anomalies {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .anomaly {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--warn);
+    padding: 14px 18px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+  .anomaly.severe { border-left-color: var(--bad); }
+  .anomaly-text { font-size: 13px; flex: 1; }
+  .anomaly-text .a-title { font-weight: 600; margin-bottom: 2px; }
+  .anomaly-text .a-detail { color: var(--ink-2); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+  .anomaly-empty {
+    padding: 28px;
+    text-align: center;
+    color: var(--ink-3);
+    font-size: 13px;
+    background: var(--bg-2);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+  }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: #0a0a0a;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    z-index: 1000;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    animation: toastIn 0.2s ease;
+  }
+  .toast.error { background: var(--bad); color: #fff; }
+  @keyframes toastIn { from { transform: translate(-50%, 12px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+  /* HEADER ANNOTATION FOR DEVICE CHANGE */
+  .device-banner {
+    background: rgba(255, 181, 71, 0.08);
+    border: 1px solid rgba(255, 181, 71, 0.3);
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--warn);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .device-banner svg { flex-shrink: 0; }
+
+  /* RESPONSIVE */
+  @media (max-width: 720px) {
+    .app { padding: 20px 14px 60px; }
+    header { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .brand h1 { font-size: 30px; }
+    .meter-value { font-size: 34px; }
+    .meter-picker { grid-template-columns: 1fr; }
+    th, td { padding: 8px 10px; }
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+
+  /* HOUSEHOLD SWITCHER */
+  .household-switcher {
+    position: relative;
+    display: inline-block;
+    margin-right: 8px;
+  }
+  .hh-button {
+    appearance: none;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    color: var(--ink);
+    padding: 9px 14px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 240px;
+  }
+  .hh-button:hover { border-color: var(--ink); }
+  .hh-button .hh-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hh-button .hh-chev {
+    color: var(--ink-3);
+    font-size: 10px;
+  }
+  .hh-button .hh-icon {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .hh-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    min-width: 280px;
+    z-index: 50;
+    padding: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  }
+  .hh-item {
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    transition: background 0.1s;
+  }
+  .hh-item:hover { background: var(--bg-3); }
+  .hh-item.active {
+    background: rgba(200, 255, 62, 0.08);
+  }
+  .hh-item .hh-item-name {
+    font-weight: 500;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hh-item .hh-item-addr {
+    font-size: 11px;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .hh-divider {
+    height: 1px;
+    background: var(--line);
+    margin: 4px 0;
+  }
+  .hh-add {
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  /* WIZARD MODAL */
+  .wizard-step {
+    margin-bottom: 18px;
+  }
+  .wizard-step-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 10px;
+  }
+  .meter-checkbox-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .meter-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .meter-check:hover { border-color: var(--ink-2); }
+  .meter-check.checked {
+    border-color: var(--accent);
+    background: rgba(200, 255, 62, 0.05);
+  }
+  .meter-check input { accent-color: var(--accent); cursor: pointer; }
+  .meter-check .mc-info { display: flex; flex-direction: column; }
+  .meter-check .mc-name { font-size: 13px; font-weight: 500; }
+  .meter-check .mc-unit { font-size: 11px; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; }
+
+  /* HOUSEHOLD MGMT IN SETTINGS */
+  .hh-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 14px;
+    background: var(--bg-3);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .hh-list-item .hh-li-info { display: flex; flex-direction: column; gap: 2px; }
+  .hh-list-item .hh-li-name { font-weight: 500; font-size: 14px; }
+  .hh-list-item .hh-li-meta { font-size: 12px; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; }
+  .hh-list-item .hh-li-actions { display: flex; gap: 4px; }
+
+  /* HISTORY TOOLBAR */
+  .history-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+    align-items: center;
+  }
+  .history-toolbar input,
+  .history-toolbar select {
+    background: var(--bg-2);
+    color: var(--ink);
+    border: 1px solid var(--line-2);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .history-toolbar input[type="search"] {
+    flex: 1;
+    min-width: 180px;
+  }
+  .history-toolbar input:focus, .history-toolbar select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .history-toolbar .filter-pills {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .filter-pill {
+    appearance: none;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    color: var(--ink-2);
+    padding: 7px 12px;
+    border-radius: 16px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .filter-pill:hover { border-color: var(--ink-2); color: var(--ink); }
+  .filter-pill.active {
+    background: var(--ink);
+    color: #0a0a0a;
+    border-color: var(--ink);
+  }
+  .filter-pill .pill-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  /* SORTABLE TABLE HEADERS */
+  th.sortable {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+  }
+  th.sortable:hover { color: var(--ink); }
+  th.sortable .sort-arrow {
+    display: inline-block;
+    margin-left: 4px;
+    opacity: 0.4;
+    font-size: 9px;
+  }
+  th.sortable.active .sort-arrow {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  /* INLINE ROW ACTIONS */
+  .row-actions {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+  }
+  .row-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--ink-3);
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+  .row-btn:hover { color: var(--ink); border-color: var(--line-2); background: var(--bg-2); }
+  .row-btn.danger:hover { color: var(--bad); border-color: var(--bad); }
+
+  /* HISTORY EMPTY STATE */
+  .history-empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--ink-3);
+    font-size: 13px;
+  }
+
+  /* AUTH SCREEN */
+  .auth-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .auth-card {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 40px;
+    width: 100%;
+    max-width: 420px;
+  }
+  .auth-card h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-size: 36px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .auth-card h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+  .auth-card .auth-sub {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-bottom: 28px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .auth-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--line);
+  }
+  .auth-tab {
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    color: var(--ink-3);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.15s;
+    font-family: inherit;
+  }
+  .auth-tab:hover { color: var(--ink-2); }
+  .auth-tab.active { color: var(--ink); }
+  .auth-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+  .auth-error {
+    background: rgba(255, 93, 93, 0.1);
+    border: 1px solid rgba(255, 93, 93, 0.3);
+    color: var(--bad);
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .auth-success {
+    background: rgba(74, 222, 128, 0.08);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    color: var(--good);
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .auth-bottom {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* SYNC INDICATOR */
+  .sync-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+    padding: 6px 10px;
+    border-radius: 16px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    margin-right: 8px;
+    transition: all 0.2s;
+  }
+  .sync-indicator .sync-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--good);
+  }
+  .sync-indicator.syncing .sync-dot {
+    background: var(--warn);
+    animation: pulse 1s infinite;
+  }
+  .sync-indicator.offline .sync-dot { background: var(--ink-3); }
+  .sync-indicator.error .sync-dot { background: var(--bad); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* LOGOUT BUTTON in user info */
+  .user-info {
+    font-size: 12px;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 8px;
+  }
+
+  .hidden { display: none !important; }
+
+  /* OCR */
+  .ocr-section {
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .ocr-toggle {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .ocr-pick-btn {
+    flex: 1;
+    appearance: none;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    color: var(--ink);
+    padding: 11px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .ocr-pick-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .ocr-stage {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 10px;
+  }
+  .ocr-canvas-wrap {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 6px;
+    background: #000;
+    line-height: 0;
+    user-select: none;
+    touch-action: none;
+  }
+  .ocr-canvas-wrap img {
+    width: 100%;
+    display: block;
+    pointer-events: none;
+  }
+  .ocr-roi {
+    position: absolute;
+    border: 2px solid var(--accent);
+    background: rgba(200, 255, 62, 0.1);
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+    pointer-events: none;
+  }
+  .ocr-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-2);
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 20px;
+  }
+  .ocr-progress {
+    flex: 1;
+    height: 4px;
+    background: var(--line);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .ocr-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s;
+  }
+  .ocr-help {
+    font-size: 11px;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 8px;
+  }
+
+  /* HEATMAP */
+  .heatmap-card {
+    overflow-x: auto;
+  }
+  .heatmap {
+    display: grid;
+    grid-template-columns: 60px repeat(12, 1fr);
+    gap: 4px;
+    min-width: 600px;
+    margin-top: 8px;
+  }
+  .heatmap-label {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 4px;
+  }
+  .heatmap-cell {
+    aspect-ratio: 1;
+    border-radius: 4px;
+    background: var(--bg-3);
+    position: relative;
+    cursor: default;
+    border: 1px solid transparent;
+    transition: transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: rgba(0,0,0,0.6);
+    font-weight: 600;
+  }
+  .heatmap-cell:hover {
+    transform: scale(1.15);
+    border-color: var(--ink);
+    z-index: 5;
+  }
+  .heatmap-cell.empty {
+    background: var(--bg);
+    border: 1px dashed var(--line);
+    color: var(--ink-3);
+  }
+  .heatmap-legend {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-top: 16px;
+    font-size: 11px;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .heatmap-legend-cell {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+  }
+
+  /* Cost display */
+  .cost {
+    color: var(--ink-3);
+    font-size: 11px;
+    margin-top: 2px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .cost strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* Settings tariff list */
+  .tariff-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* yearly summary */
+  .year-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .year-cell {
+    background: var(--bg-3);
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+  }
+  .year-cell .y-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 6px;
+  }
+  .year-cell .y-val {
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+  }
+  .year-cell .y-detail {
+    font-size: 12px;
+    color: var(--ink-2);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+  }
+
+</style>
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="authScreen" class="auth-screen hidden">
+  <div class="auth-card">
+    <h1>Spotreba<em>.</em></h1>
+    <span class="auth-sub">Tracker energií · cloud sync</span>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-mode="signin">Prihlásiť sa</button>
+      <button class="auth-tab" data-mode="signup">Vytvoriť účet</button>
+    </div>
+
+    <div id="authError" class="auth-error hidden"></div>
+    <div id="authSuccess" class="auth-success hidden"></div>
+
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="authEmail" placeholder="meno@example.com" autocomplete="email">
+    </div>
+    <div class="field">
+      <label>Heslo</label>
+      <input type="password" id="authPassword" placeholder="aspoň 6 znakov" autocomplete="current-password">
+    </div>
+
+    <button class="btn btn-primary" id="authSubmit" style="width: 100%; margin-top: 8px;">Prihlásiť sa</button>
+
+    <div class="auth-bottom">
+      Tvoje dáta sú v cloude (Supabase). Môžeš sa prihlásiť z viacerých zariadení.
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="appRoot" class="app hidden">
+
+  <header>
+    <div class="brand">
+      <h1>Spotreba<em>.</em></h1>
+      <span class="sub">Tracker energií · v0.1</span>
+    </div>
+    <div class="header-actions">
+      <span class="sync-indicator" id="syncIndicator" title="">
+        <span class="sync-dot"></span>
+        <span id="syncText">—</span>
+      </span>
+      <div class="household-switcher">
+        <button class="hh-button" id="hhButton">
+          <span class="hh-icon"></span>
+          <span class="hh-name" id="hhButtonName">—</span>
+          <span class="hh-chev">▼</span>
+        </button>
+        <div class="hh-dropdown hidden" id="hhDropdown"></div>
+      </div>
+      <button class="btn btn-ghost" id="btnImport">Import JSON</button>
+      <button class="btn btn-ghost" id="btnExport">Export JSON</button>
+      <button class="btn btn-primary" id="btnAddTop">+ Nový odpočet</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="history">História</button>
+    <button class="tab" data-tab="charts">Grafy</button>
+    <button class="tab" data-tab="heatmap">Heatmapa</button>
+    <button class="tab" data-tab="anomalies">Anomálie</button>
+    <button class="tab" data-tab="settings">Nastavenia</button>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <section id="tab-dashboard">
+    <div class="section-title">
+      <h2>Aktuálny stav</h2>
+      <span class="hint" id="lastUpdated"></span>
+    </div>
+    <div class="meters-grid" id="metersGrid"></div>
+
+    <div class="section-title">
+      <h2>Tento mesiac vs minulé roky</h2>
+      <span class="hint">porovnanie rovnakého mesiaca</span>
+    </div>
+    <div class="card">
+      <div class="chart-wrap" style="height: 280px;">
+        <canvas id="chartCompare"></canvas>
+      </div>
+    </div>
+
+    <div style="margin-top: 32px;"></div>
+    <div class="section-title">
+      <h2>Ročné súčty</h2>
+      <span class="hint">spotreba za kalendárny rok</span>
+    </div>
+    <div class="card" id="yearlyCard"></div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="tab-history" class="hidden">
+    <div class="section-title">
+      <h2>História odpočtov</h2>
+      <span class="hint" id="historyCount"></span>
+    </div>
+    <div class="history-toolbar">
+      <input type="search" id="historySearch" placeholder="Hľadať v poznámkach a hodnotách...">
+      <div class="filter-pills" id="historyFilterPills"></div>
+      <select id="historyDateFilter">
+        <option value="all">Všetky obdobia</option>
+        <option value="2026">Rok 2026</option>
+        <option value="2025">Rok 2025</option>
+        <option value="2024">Rok 2024</option>
+        <option value="2023">Rok 2023</option>
+        <option value="last12">Posledných 12 mes.</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable active" data-sort="date">Dátum<span class="sort-arrow">▼</span></th>
+            <th class="sortable" data-sort="meter">Meradlo<span class="sort-arrow">▼</span></th>
+            <th class="num sortable" data-sort="value">Stav<span class="sort-arrow">▼</span></th>
+            <th class="num sortable" data-sort="delta">Spotreba/mesiac<span class="sort-arrow">▼</span></th>
+            <th>Poznámka</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- CHARTS -->
+  <section id="tab-charts" class="hidden">
+    <div class="section-title">
+      <h2>Vizualizácia spotreby</h2>
+    </div>
+    <div class="card">
+      <div class="chart-tools">
+        <select id="chartMeter"></select>
+        <select id="chartView">
+          <option value="monthly">Mesačná spotreba</option>
+          <option value="cumulative">Kumulatívne (stav počítadla)</option>
+          <option value="yearOverYear">Porovnanie rok-na-rok</option>
+        </select>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="mainChart"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- HEATMAP -->
+  <section id="tab-heatmap" class="hidden">
+    <div class="section-title">
+      <h2>Heatmapa spotreby</h2>
+      <span class="hint">tmavšia = vyššia spotreba</span>
+    </div>
+    <div class="card heatmap-card">
+      <div class="chart-tools">
+        <select id="heatmapMeter"></select>
+      </div>
+      <div id="heatmapBody"></div>
+    </div>
+  </section>
+
+  <!-- ANOMALIES -->
+  <section id="tab-anomalies" class="hidden">
+    <div class="section-title">
+      <h2>Detekované anomálie</h2>
+      <span class="hint">odchýlky od historického profilu</span>
+    </div>
+    <div class="anomalies" id="anomaliesList"></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" class="hidden">
+    <div class="section-title">
+      <h2>Nastavenia a údržba</h2>
+    </div>
+
+    <div class="card">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Účet a synchronizácia</h3>
+      <div class="user-info" id="userInfo">—</div>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Tvoje dáta sú synchronizované do cloudu (Supabase) a dostupné na všetkých zariadeniach po prihlásení.
+      </p>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn" id="btnFullSync">Vykonať plnú synchronizáciu</button>
+        <button class="btn btn-danger" id="btnLogout">Odhlásiť</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Domácnosti</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Sleduj viacero domov v jednej appke. Každý dom má vlastné meradlá, odpočty a tarify.
+      </p>
+      <div id="householdsList"></div>
+      <button class="btn btn-primary" id="btnAddHousehold" style="margin-top: 12px;">+ Pridať dom</button>
+    </div>
+
+    <div class="card">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Prahy upozornení</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Ak je mesačná spotreba o viac než X % vyššia oproti priemeru rovnakého mesiaca z predchádzajúcich rokov, vznikne upozornenie.
+      </p>
+      <div class="field">
+        <label>Prah varovania (%)</label>
+        <input type="number" id="thresholdWarn" value="25" min="5" max="200">
+      </div>
+      <div class="field">
+        <label>Prah vážnej anomálie (%)</label>
+        <input type="number" id="thresholdSevere" value="50" min="5" max="500">
+      </div>
+      <button class="btn btn-primary" id="btnSaveSettings">Uložiť</button>
+    </div>
+
+    <div class="card">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Náklady (voliteľné)</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Cena za jednotku — dashboard a karty potom ukážu odhad nákladov v €. Nechaj prázdne ak nepotrebuješ.
+      </p>
+      <div class="tariff-grid" id="tariffGrid"></div>
+      <button class="btn btn-primary" id="btnSaveTariffs" style="margin-top: 14px;">Uložiť tarify</button>
+    </div>
+
+    <div class="card">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Výmena merača</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Keď ti vymenia fyzický merač, pridaj výmenu — zachová sa kontinuita spotreby.
+      </p>
+      <button class="btn" id="btnReplaceDevice">Zaznamenať výmenu merača</button>
+    </div>
+
+    <div class="card">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Reset</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Pred resetom si urob export — dáta nepôjde obnoviť.
+      </p>
+      <button class="btn btn-danger" id="btnReset">Vymazať všetky dáta</button>
+    </div>
+  </section>
+
+</div>
+
+<!-- HOUSEHOLD WIZARD MODAL -->
+<div id="wizardModal" class="modal-overlay hidden">
+  <div class="modal" style="max-width: 520px;">
+    <h3 id="wizardTitle">Pridať dom</h3>
+    <p class="modal-sub" id="wizardSub">Pomenuj dom a vyber meradlá, ktoré budeš sledovať.</p>
+
+    <div class="wizard-step">
+      <div class="wizard-step-title">1 · Základné údaje</div>
+      <div class="field">
+        <label>Názov domu</label>
+        <input type="text" id="wizName" placeholder="napr. Rodičovský dom">
+      </div>
+      <div class="field">
+        <label>Adresa (voliteľné)</label>
+        <input type="text" id="wizAddress" placeholder="napr. Jozefov 12, Trnava">
+      </div>
+    </div>
+
+    <div class="wizard-step">
+      <div class="wizard-step-title">2 · Meradlá</div>
+      <div class="meter-checkbox-grid" id="wizMeterGrid"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnWizCancel">Zrušiť</button>
+      <button class="btn btn-primary" id="btnWizSave">Vytvoriť dom</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT HOUSEHOLD MODAL -->
+<div id="hhEditModal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3>Upraviť dom</h3>
+    <p class="modal-sub">Zmena meradiel ovplyvní len pre nové odpočty.</p>
+
+    <div class="field">
+      <label>Názov</label>
+      <input type="text" id="hhEditName">
+    </div>
+    <div class="field">
+      <label>Adresa</label>
+      <input type="text" id="hhEditAddress">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnHhEditCancel">Zrušiť</button>
+      <button class="btn btn-primary" id="btnHhEditSave">Uložiť</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT READING MODAL -->
+<div id="editModal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3>Upraviť odpočet</h3>
+    <p class="modal-sub" id="editSub"></p>
+
+    <div class="field">
+      <label>Dátum</label>
+      <input type="date" id="editDate">
+    </div>
+    <div class="field">
+      <label>Stav počítadla</label>
+      <input type="number" id="editValue" step="any">
+      <div class="field-hint" id="editHint"></div>
+    </div>
+    <div class="field">
+      <label>Poznámka</label>
+      <input type="text" id="editNote">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnEditCancel">Zrušiť</button>
+      <button class="btn btn-primary" id="btnEditSave">Uložiť zmeny</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD READING MODAL -->
+<div id="addModal" class="modal-overlay hidden">
+  <div class="modal" style="max-width: 540px;">
+    <h3>Nový odpočet</h3>
+    <p class="modal-sub">Zapíš stav počítadla — appka si dopočíta spotrebu.</p>
+
+    <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; display: block; margin-bottom: 8px;">Meradlo</label>
+    <div class="meter-picker" id="addMeterPicker"></div>
+
+    <div class="ocr-section">
+      <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; display: block; margin-bottom: 8px;">Foto merača (voliteľné)</label>
+      <div class="ocr-toggle">
+        <button type="button" class="ocr-pick-btn" id="ocrCamera">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Odfotiť merač
+        </button>
+        <button type="button" class="ocr-pick-btn" id="ocrUpload">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Nahrať fotku
+        </button>
+      </div>
+      <input type="file" id="ocrFileCamera" accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="ocrFile" accept="image/*" style="display:none">
+      <div id="ocrStage" class="ocr-stage hidden">
+        <div class="ocr-canvas-wrap" id="ocrCanvasWrap">
+          <img id="ocrImage" alt="">
+          <div class="ocr-roi hidden" id="ocrRoi"></div>
+        </div>
+        <div class="ocr-help">Označ obdĺžnik okolo číslic ťahaním prsta/myši cez fotku</div>
+        <div class="ocr-status" id="ocrStatus">
+          <span id="ocrStatusText">Označ číslice na fotke</span>
+          <div class="ocr-progress hidden" id="ocrProgressWrap"><div class="ocr-progress-bar" id="ocrProgressBar"></div></div>
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+          <button type="button" class="btn btn-ghost" id="ocrClear">Zrušiť foto</button>
+          <button type="button" class="btn btn-primary" id="ocrRun" disabled style="flex: 1;">Prečítať hodnotu</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Dátum</label>
+      <input type="date" id="addDate">
+    </div>
+    <div class="field">
+      <label>Stav počítadla</label>
+      <input type="number" id="addValue" step="any" placeholder="napr. 21644">
+      <div class="field-hint" id="addHint"></div>
+    </div>
+    <div class="field">
+      <label>Poznámka (voliteľné)</label>
+      <input type="text" id="addNote" placeholder="napr. fakturačný odpočet">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnCancel">Zrušiť</button>
+      <button class="btn btn-primary" id="btnSave">Uložiť odpočet</button>
+    </div>
+  </div>
+</div>
+
+<!-- REPLACE DEVICE MODAL -->
+<div id="deviceModal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3>Výmena merača</h3>
+    <p class="modal-sub">Zaznamenaj výmenu fyzického zariadenia. Stav starého a počiatočný stav nového môžu byť rôzne.</p>
+
+    <div class="field">
+      <label>Meradlo</label>
+      <select id="devMeter"></select>
+    </div>
+    <div class="field">
+      <label>Dátum výmeny</label>
+      <input type="date" id="devDate">
+    </div>
+    <div class="field">
+      <label>Finálny stav starého merača</label>
+      <input type="number" id="devOldFinal" step="any">
+    </div>
+    <div class="field">
+      <label>Počiatočný stav nového merača</label>
+      <input type="number" id="devNewInit" step="any" value="0">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnDevCancel">Zrušiť</button>
+      <button class="btn btn-primary" id="btnDevSave">Zaznamenať výmenu</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileImport" accept=".json" style="display:none">
+
+<script>
+/* =============================================================
+   SUPABASE — auth + cloud sync
+   ============================================================= */
+
+const SUPABASE_URL = 'https://qgsfslcimhzpncbzelzx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+window.sb = sb;
+
+const Sync = {
+  user: null,
+  // mapy: lokálne ID → cloud ID a opačne (pre každý typ)
+  // ukladané v db.settings ako 'syncMaps'
+  maps: {
+    households: {}, // local pk → cloud id
+    meters: {},
+    devices: {},
+    readings: {}
+  },
+  // reverzné mapy
+  rev: {
+    households: {},
+    meters: {},
+    devices: {},
+    readings: {}
+  },
+  status: 'offline', // 'synced' | 'syncing' | 'offline' | 'error'
+  pendingSync: false
+};
+window.Sync = Sync;
+
+function setSyncStatus(status, message) {
+  Sync.status = status;
+  const ind = document.getElementById('syncIndicator');
+  const text = document.getElementById('syncText');
+  if (!ind) return;
+  ind.classList.remove('syncing', 'offline', 'error');
+  if (status === 'syncing') {
+    ind.classList.add('syncing');
+    text.textContent = 'Synchronizujem...';
+    ind.title = 'Prebieha synchronizácia';
+  } else if (status === 'synced') {
+    text.textContent = 'Synchronizované';
+    ind.title = message || 'Dáta sú synchronizované s cloudom';
+  } else if (status === 'offline') {
+    ind.classList.add('offline');
+    text.textContent = 'Offline';
+    ind.title = 'Bez pripojenia — zmeny sa nahrajú po obnovení';
+  } else if (status === 'error') {
+    ind.classList.add('error');
+    text.textContent = 'Chyba sync';
+    ind.title = message || 'Synchronizácia zlyhala';
+  }
+}
+
+async function loadSyncMaps() {
+  const m = await db.settings.get('syncMaps');
+  if (m && m.value) {
+    Sync.maps = m.value;
+  } else {
+    Sync.maps = { households: {}, meters: {}, devices: {}, readings: {} };
+  }
+  // postav reverzne mapy
+  Sync.rev = { households: {}, meters: {}, devices: {}, readings: {} };
+  for (const [tbl, map] of Object.entries(Sync.maps)) {
+    for (const [local, cloud] of Object.entries(map)) {
+      Sync.rev[tbl][cloud] = parseInt(local);
+    }
+  }
+}
+
+async function saveSyncMaps() {
+  await db.settings.put({ key: 'syncMaps', value: Sync.maps });
+}
+
+function setMap(table, localId, cloudId) {
+  Sync.maps[table][localId] = cloudId;
+  Sync.rev[table][cloudId] = localId;
+}
+
+/* ================ AUTH ================ */
+
+async function signIn(email, password) {
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+async function signUp(email, password) {
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  // vyčisti sync mapy (lokálne dáta zostávajú)
+  await db.settings.delete('syncMaps');
+  Sync.user = null;
+  Sync.maps = { households: {}, meters: {}, devices: {}, readings: {} };
+  Sync.rev = { households: {}, meters: {}, devices: {}, readings: {} };
+  // reload appky aby sa zobrazila auth screen
+  location.reload();
+}
+
+async function getCurrentUser() {
+  const { data: { user } } = await sb.auth.getUser();
+  return user;
+}
+
+/* ================ PULL: cloud → local ================ */
+
+async function pullFromCloud() {
+  if (!Sync.user) return;
+  setSyncStatus('syncing');
+
+  try {
+    const [hh, ms, ds, rs, us] = await Promise.all([
+      sb.from('households').select('*').order('id'),
+      sb.from('meters').select('*').order('id'),
+      sb.from('devices').select('*').order('id'),
+      sb.from('readings').select('*').order('id'),
+      sb.from('user_settings').select('*').eq('user_id', Sync.user.id).maybeSingle()
+    ]);
+    if (hh.error) throw hh.error;
+    if (ms.error) throw ms.error;
+    if (ds.error) throw ds.error;
+    if (rs.error) throw rs.error;
+    if (us.error) throw us.error;
+
+    // Premapuj cloud rows na lokálnu schému, pridaj/aktualizuj v Dexie
+    const cloudHhIds = new Set();
+    for (const ch of hh.data) {
+      cloudHhIds.add(ch.id);
+      let localId = Sync.rev.households[ch.id];
+      if (localId == null) {
+        // nový dom z cloudu
+        localId = await db.households.add({
+          name: ch.name,
+          address: ch.address || '',
+          enabledMeters: ch.enabled_meters || [],
+          createdAt: ch.created_at
+        });
+      } else {
+        await db.households.update(localId, {
+          name: ch.name,
+          address: ch.address || '',
+          enabledMeters: ch.enabled_meters || []
+        });
+      }
+      setMap('households', localId, ch.id);
+    }
+
+    // METERS
+    const cloudMeterIds = new Set();
+    for (const cm of ms.data) {
+      cloudMeterIds.add(cm.id);
+      const localHhId = Sync.rev.households[cm.household_id];
+      if (localHhId == null) continue;
+      let localPk = Sync.rev.meters[cm.id];
+      if (localPk == null) {
+        localPk = await db.meters.add({
+          householdId: localHhId,
+          type: cm.type,
+          name: cm.name,
+          unit: cm.unit
+        });
+      } else {
+        await db.meters.update(localPk, {
+          householdId: localHhId,
+          type: cm.type,
+          name: cm.name,
+          unit: cm.unit
+        });
+      }
+      setMap('meters', localPk, cm.id);
+    }
+
+    // DEVICES
+    const cloudDeviceIds = new Set();
+    for (const cd of ds.data) {
+      cloudDeviceIds.add(cd.id);
+      const localHhId = Sync.rev.households[cd.household_id];
+      const localMeterPk = Sync.rev.meters[cd.meter_id];
+      if (localHhId == null || localMeterPk == null) continue;
+      let localId = Sync.rev.devices[cd.id];
+      if (localId == null) {
+        localId = await db.devices.add({
+          householdId: localHhId,
+          meterPk: localMeterPk,
+          installedDate: cd.installed_date,
+          initialValue: parseFloat(cd.initial_value),
+          replacedDate: cd.replaced_date,
+          finalValue: cd.final_value != null ? parseFloat(cd.final_value) : null
+        });
+      } else {
+        await db.devices.update(localId, {
+          installedDate: cd.installed_date,
+          initialValue: parseFloat(cd.initial_value),
+          replacedDate: cd.replaced_date,
+          finalValue: cd.final_value != null ? parseFloat(cd.final_value) : null
+        });
+      }
+      setMap('devices', localId, cd.id);
+    }
+
+    // READINGS
+    const cloudReadingIds = new Set();
+    for (const cr of rs.data) {
+      cloudReadingIds.add(cr.id);
+      const localHhId = Sync.rev.households[cr.household_id];
+      const localMeterPk = Sync.rev.meters[cr.meter_id];
+      const localDeviceId = Sync.rev.devices[cr.device_id];
+      if (localHhId == null || localMeterPk == null || localDeviceId == null) continue;
+      let localId = Sync.rev.readings[cr.id];
+      if (localId == null) {
+        localId = await db.readings.add({
+          householdId: localHhId,
+          meterPk: localMeterPk,
+          deviceId: localDeviceId,
+          date: cr.date,
+          value: parseFloat(cr.value),
+          note: cr.note || null
+        });
+      } else {
+        await db.readings.update(localId, {
+          date: cr.date,
+          value: parseFloat(cr.value),
+          note: cr.note || null
+        });
+      }
+      setMap('readings', localId, cr.id);
+    }
+
+    // Zmaž lokálne záznamy ktoré v cloude už nie sú (boli zmazané inde)
+    // POZN: len tie, ktoré boli v sync map - nezmaže to lokálne nezmigrované
+    for (const [localId, cloudId] of Object.entries(Sync.maps.readings)) {
+      if (!cloudReadingIds.has(cloudId)) {
+        await db.readings.delete(parseInt(localId));
+        delete Sync.rev.readings[cloudId];
+        delete Sync.maps.readings[localId];
+      }
+    }
+    for (const [localId, cloudId] of Object.entries(Sync.maps.devices)) {
+      if (!cloudDeviceIds.has(cloudId)) {
+        await db.devices.delete(parseInt(localId));
+        delete Sync.rev.devices[cloudId];
+        delete Sync.maps.devices[localId];
+      }
+    }
+    for (const [localId, cloudId] of Object.entries(Sync.maps.meters)) {
+      if (!cloudMeterIds.has(cloudId)) {
+        await db.meters.delete(parseInt(localId));
+        delete Sync.rev.meters[cloudId];
+        delete Sync.maps.meters[localId];
+      }
+    }
+    for (const [localId, cloudId] of Object.entries(Sync.maps.households)) {
+      if (!cloudHhIds.has(cloudId)) {
+        await db.households.delete(parseInt(localId));
+        delete Sync.rev.households[cloudId];
+        delete Sync.maps.households[localId];
+      }
+    }
+
+    // user_settings (tarify, prahy)
+    if (us.data && us.data.data) {
+      const incoming = us.data.data;
+      if (incoming.thresholds) {
+        await db.settings.put({ key: 'thresholds', warn: incoming.thresholds.warn, severe: incoming.thresholds.severe });
+      }
+      if (incoming.tariffs) {
+        await db.settings.put({ key: 'tariffs', values: incoming.tariffs });
+      }
+      if (incoming.activeHouseholdLocalCloud != null) {
+        // aktívny dom - cloud_id, premap na local
+        const localHh = Sync.rev.households[incoming.activeHouseholdLocalCloud];
+        if (localHh != null) {
+          await db.settings.put({ key: 'activeHousehold', value: localHh });
+        }
+      }
+    }
+
+    await saveSyncMaps();
+    setSyncStatus('synced', 'Stiahnuté ' + new Date().toLocaleTimeString('sk-SK'));
+  } catch (e) {
+    console.error('pull error', e);
+    setSyncStatus('error', e.message);
+    throw e;
+  }
+}
+
+/* ================ PUSH: local → cloud ================ */
+
+async function pushAll() {
+  if (!Sync.user) return;
+  setSyncStatus('syncing');
+
+  try {
+    // 1) HOUSEHOLDS
+    const allHh = await db.households.toArray();
+    for (const h of allHh) {
+      const cloudId = Sync.maps.households[h.id];
+      const payload = {
+        user_id: Sync.user.id,
+        name: h.name,
+        address: h.address || null,
+        enabled_meters: h.enabledMeters || []
+      };
+      if (cloudId == null) {
+        const { data, error } = await sb.from('households').insert(payload).select().single();
+        if (error) throw error;
+        setMap('households', h.id, data.id);
+      } else {
+        const { error } = await sb.from('households').update(payload).eq('id', cloudId);
+        if (error) throw error;
+      }
+    }
+
+    // 2) METERS
+    const allMeters = await db.meters.toArray();
+    for (const m of allMeters) {
+      const cloudHhId = Sync.maps.households[m.householdId];
+      if (cloudHhId == null) continue;
+      const cloudId = Sync.maps.meters[m.pk];
+      const payload = {
+        household_id: cloudHhId,
+        type: m.type,
+        name: m.name,
+        unit: m.unit
+      };
+      if (cloudId == null) {
+        const { data, error } = await sb.from('meters').insert(payload).select().single();
+        if (error) throw error;
+        setMap('meters', m.pk, data.id);
+      } else {
+        const { error } = await sb.from('meters').update(payload).eq('id', cloudId);
+        if (error) throw error;
+      }
+    }
+
+    // 3) DEVICES
+    const allDevices = await db.devices.toArray();
+    for (const d of allDevices) {
+      const cloudHhId = Sync.maps.households[d.householdId];
+      const cloudMeterId = Sync.maps.meters[d.meterPk];
+      if (cloudHhId == null || cloudMeterId == null) continue;
+      const cloudId = Sync.maps.devices[d.id];
+      const payload = {
+        household_id: cloudHhId,
+        meter_id: cloudMeterId,
+        installed_date: d.installedDate,
+        initial_value: d.initialValue,
+        replaced_date: d.replacedDate,
+        final_value: d.finalValue
+      };
+      if (cloudId == null) {
+        const { data, error } = await sb.from('devices').insert(payload).select().single();
+        if (error) throw error;
+        setMap('devices', d.id, data.id);
+      } else {
+        const { error } = await sb.from('devices').update(payload).eq('id', cloudId);
+        if (error) throw error;
+      }
+    }
+
+    // 4) READINGS - bulk insert pre rýchlosť
+    const allReadings = await db.readings.toArray();
+    const toInsert = [];
+    const toUpdate = [];
+    for (const r of allReadings) {
+      const cloudHhId = Sync.maps.households[r.householdId];
+      const cloudMeterId = Sync.maps.meters[r.meterPk];
+      const cloudDeviceId = Sync.maps.devices[r.deviceId];
+      if (cloudHhId == null || cloudMeterId == null || cloudDeviceId == null) continue;
+      const cloudId = Sync.maps.readings[r.id];
+      const payload = {
+        household_id: cloudHhId,
+        meter_id: cloudMeterId,
+        device_id: cloudDeviceId,
+        date: r.date,
+        value: r.value,
+        note: r.note || null
+      };
+      if (cloudId == null) {
+        toInsert.push({ localId: r.id, payload });
+      } else {
+        toUpdate.push({ cloudId, payload });
+      }
+    }
+    // Bulk insert v batch po 200
+    for (let i = 0; i < toInsert.length; i += 200) {
+      const batch = toInsert.slice(i, i + 200);
+      const { data, error } = await sb.from('readings').insert(batch.map(x => x.payload)).select();
+      if (error) throw error;
+      for (let j = 0; j < batch.length; j++) {
+        setMap('readings', batch[j].localId, data[j].id);
+      }
+    }
+    // Updates
+    for (const u of toUpdate) {
+      const { error } = await sb.from('readings').update(u.payload).eq('id', u.cloudId);
+      if (error) throw error;
+    }
+
+    // 5) user_settings (tarify, prahy)
+    const thresholds = await db.settings.get('thresholds');
+    const tariffs = await db.settings.get('tariffs');
+    const activeHh = await db.settings.get('activeHousehold');
+    const activeHhCloud = activeHh ? Sync.maps.households[activeHh.value] : null;
+    const settingsData = {
+      thresholds: thresholds ? { warn: thresholds.warn, severe: thresholds.severe } : null,
+      tariffs: tariffs ? tariffs.values : null,
+      activeHouseholdLocalCloud: activeHhCloud
+    };
+    const { error: usErr } = await sb.from('user_settings').upsert({
+      user_id: Sync.user.id,
+      data: settingsData
+    });
+    if (usErr) throw usErr;
+
+    await saveSyncMaps();
+    setSyncStatus('synced', 'Nahrané ' + new Date().toLocaleTimeString('sk-SK'));
+  } catch (e) {
+    console.error('push error', e);
+    setSyncStatus('error', e.message);
+    throw e;
+  }
+}
+
+/* ================ Lokálne zmeny → push (debounced) ================ */
+
+let pushTimer = null;
+function schedulePush() {
+  if (!Sync.user) return;
+  if (pushTimer) clearTimeout(pushTimer);
+  setSyncStatus('syncing');
+  pushTimer = setTimeout(async () => {
+    try { await pushAll(); } catch (e) { /* status už nastavený */ }
+  }, 800);
+}
+
+/* ================ Cloud delete handlers ================ */
+
+async function cloudDeleteReading(localId) {
+  const cloudId = Sync.maps.readings[localId];
+  if (!cloudId || !Sync.user) return;
+  const { error } = await sb.from('readings').delete().eq('id', cloudId);
+  if (error) console.error('cloud delete reading', error);
+  delete Sync.rev.readings[cloudId];
+  delete Sync.maps.readings[localId];
+  await saveSyncMaps();
+}
+
+async function cloudDeleteHousehold(localId) {
+  const cloudId = Sync.maps.households[localId];
+  if (!cloudId || !Sync.user) return;
+  // cascade na serveri zmaže meters, devices, readings
+  const { error } = await sb.from('households').delete().eq('id', cloudId);
+  if (error) console.error('cloud delete household', error);
+  // vyčisti mapy pre tento dom
+  delete Sync.rev.households[cloudId];
+  delete Sync.maps.households[localId];
+  await saveSyncMaps();
+}
+
+/* ================ AUTH UI ================ */
+
+let authMode = 'signin';
+
+function showAuthError(msg) {
+  const el = document.getElementById('authError');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  document.getElementById('authSuccess').classList.add('hidden');
+}
+function showAuthSuccess(msg) {
+  const el = document.getElementById('authSuccess');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  document.getElementById('authError').classList.add('hidden');
+}
+function clearAuthMessages() {
+  document.getElementById('authError').classList.add('hidden');
+  document.getElementById('authSuccess').classList.add('hidden');
+}
+
+async function handleAuthSubmit() {
+  clearAuthMessages();
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  if (!email || !password) { showAuthError('Vyplň email a heslo'); return; }
+  if (password.length < 6) { showAuthError('Heslo musí mať aspoň 6 znakov'); return; }
+
+  const btn = document.getElementById('authSubmit');
+  btn.disabled = true;
+  btn.textContent = authMode === 'signin' ? 'Prihlasovanie...' : 'Registrácia...';
+
+  try {
+    if (authMode === 'signin') {
+      await signIn(email, password);
+      // onAuthStateChange spustí appku
+    } else {
+      const result = await signUp(email, password);
+      if (result.user && !result.session) {
+        showAuthSuccess('Účet vytvorený. Skontroluj email pre potvrdenie (ak je vyžadované) alebo sa prihlás.');
+        btn.disabled = false;
+        btn.textContent = 'Prihlásiť sa';
+        // prepni na sign in
+        document.querySelector('.auth-tab[data-mode="signin"]').click();
+      }
+      // ak je session, onAuthStateChange spustí appku
+    }
+  } catch (e) {
+    showAuthError(e.message || 'Neznáma chyba');
+    btn.disabled = false;
+    btn.textContent = authMode === 'signin' ? 'Prihlásiť sa' : 'Vytvoriť účet';
+  }
+}
+
+function setupAuthUI() {
+  document.querySelectorAll('.auth-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      authMode = t.dataset.mode;
+      document.querySelectorAll('.auth-tab').forEach(x => x.classList.toggle('active', x === t));
+      document.getElementById('authSubmit').textContent = authMode === 'signin' ? 'Prihlásiť sa' : 'Vytvoriť účet';
+      clearAuthMessages();
+    });
+  });
+  document.getElementById('authSubmit').addEventListener('click', handleAuthSubmit);
+  document.getElementById('authPassword').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleAuthSubmit();
+  });
+}
+
+function showAuthScreen() {
+  document.getElementById('authScreen').classList.remove('hidden');
+  document.getElementById('appRoot').classList.add('hidden');
+}
+
+function hideAuthScreen() {
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('appRoot').classList.remove('hidden');
+}
+
+/* ================ ONLINE/OFFLINE detection ================ */
+
+window.addEventListener('online', () => {
+  if (Sync.user) {
+    setSyncStatus('syncing');
+    schedulePush();
+  }
+});
+window.addEventListener('offline', () => {
+  setSyncStatus('offline');
+});
+</script>
+
+<script>
+/* =============================================================
+   DATA LAYER (Dexie / IndexedDB)
+   ============================================================= */
+
+/* =============================================================
+   DB SETUP — používame NOVÚ databázu (spotrebaDB_v2),
+   stará spotrebaDB (v1) ostáva nedotknutá ako poistka.
+   Dexie nepodporuje zmenu primárneho kľúča medzi verziami,
+   preto sme prešli na úplne novú DB.
+   ============================================================= */
+
+// Stará DB (v1 schéma) - len read pre migráciu
+const oldDb = new Dexie('spotrebaDB');
+oldDb.version(1).stores({
+  meters: 'id, type',
+  devices: '++id, meterId, installedDate',
+  readings: '++id, [meterId+date], date, deviceId',
+  settings: 'key'
+});
+
+// Nová DB (v2 schéma s households)
+const db = new Dexie('spotrebaDB_v2');
+db.version(1).stores({
+  households: '++id, name',
+  meters: '++pk, [householdId+type], householdId, type',
+  devices: '++id, [householdId+meterPk], meterPk, installedDate',
+  readings: '++id, [householdId+meterPk+date], [meterPk+date], date, deviceId, householdId, meterPk',
+  settings: 'key'
+});
+
+/**
+ * Ak nová DB je prázdna a stará DB existuje s dátami,
+ * vykoná migráciu: stará → nová, zaobalená do "Môj dom".
+ * Idempotentné - dá sa volať opakovane bezpečne.
+ */
+async function migrateFromOldDbIfNeeded() {
+  // Ak nová DB už má households, je migrované alebo nový start - nič nerobíme
+  const existingHouseholds = await db.households.count();
+  if (existingHouseholds > 0) return false;
+
+  // Skús otvoriť starú DB. Ak neexistuje alebo je prázdna, nič nemigrujeme.
+  let oldData;
+  try {
+    await oldDb.open();
+    const oldMeters = await oldDb.meters.toArray();
+    if (oldMeters.length === 0) return false;
+    oldData = {
+      meters: oldMeters,
+      devices: await oldDb.devices.toArray(),
+      readings: await oldDb.readings.toArray(),
+      settings: await oldDb.settings.toArray()
+    };
+  } catch (e) {
+    console.log('Stará DB neexistuje alebo nie je dostupná:', e.message);
+    return false;
+  } finally {
+    if (oldDb.isOpen()) oldDb.close();
+  }
+
+  // Vytvor "Môj dom" v novej DB
+  const hhId = await db.households.add({
+    name: 'Môj dom',
+    address: '',
+    enabledMeters: oldData.meters.map(m => m.type),
+    createdAt: new Date().toISOString()
+  });
+
+  // Migruj meradlá: starý id (string) → nový pk (number)
+  const oldIdToNewPk = {};
+  for (const m of oldData.meters) {
+    const newPk = await db.meters.add({
+      householdId: hhId,
+      type: m.type,
+      name: m.name,
+      unit: m.unit
+    });
+    oldIdToNewPk[m.id] = newPk;
+  }
+
+  // Migruj devices: meterId (string) → meterPk (number); deviceId zostáva alebo sa premapuje
+  const oldDeviceIdToNew = {};
+  for (const d of oldData.devices) {
+    const newPk = oldIdToNewPk[d.meterId];
+    if (newPk == null) continue;
+    const newId = await db.devices.add({
+      householdId: hhId,
+      meterPk: newPk,
+      installedDate: d.installedDate,
+      initialValue: d.initialValue,
+      replacedDate: d.replacedDate,
+      finalValue: d.finalValue
+    });
+    oldDeviceIdToNew[d.id] = newId;
+  }
+
+  // Migruj readings
+  for (const r of oldData.readings) {
+    const newPk = oldIdToNewPk[r.meterId];
+    const newDeviceId = oldDeviceIdToNew[r.deviceId];
+    if (newPk == null || newDeviceId == null) continue;
+    await db.readings.add({
+      householdId: hhId,
+      meterPk: newPk,
+      deviceId: newDeviceId,
+      date: r.date,
+      value: r.value,
+      note: r.note || null,
+      photoBlob: r.photoBlob
+    });
+  }
+
+  // Migruj settings (s výnimkou activeHousehold ktoré nastavíme samostatne)
+  for (const s of oldData.settings) {
+    if (s.key === 'activeHousehold') continue;
+    await db.settings.put(s);
+  }
+  await db.settings.put({ key: 'activeHousehold', value: hhId });
+
+  console.log(`Migrácia hotová: ${oldData.meters.length} meradiel, ${oldData.devices.length} zariadení, ${oldData.readings.length} odpočtov → "Môj dom"`);
+  return true;
+}
+
+const METER_DEFS_TEMPLATE = [
+  { type: 'electricity_in',  name: 'Elektrina – odber',  unit: 'kWh', color: '#ffb547' },
+  { type: 'electricity_out', name: 'Elektrina – predaj', unit: 'kWh', color: '#c8ff3e' },
+  { type: 'water',           name: 'Voda',                unit: 'm³',  color: '#4cc9f0' },
+  { type: 'gas',             name: 'Plyn',                unit: 'm³',  color: '#f87171' }
+];
+
+// Aktívny dom + jeho povolené meradlá - načítané pri každom prepnutí domu
+const State = {
+  activeHouseholdId: null,
+  household: null,
+  meters: [], // [{pk, type, name, unit, color}]
+};
+
+async function loadActiveHousehold() {
+  const setting = await db.settings.get('activeHousehold');
+  if (!setting || !setting.value) {
+    State.activeHouseholdId = null;
+    State.household = null;
+    State.meters = [];
+    return;
+  }
+  State.activeHouseholdId = setting.value;
+  State.household = await db.households.get(setting.value);
+  if (!State.household) {
+    State.activeHouseholdId = null;
+    State.meters = [];
+    return;
+  }
+  // load meters for this household, doplň color z templátu
+  const rows = await db.meters.where('householdId').equals(setting.value).toArray();
+  State.meters = rows.map(r => {
+    const tmpl = METER_DEFS_TEMPLATE.find(t => t.type === r.type);
+    return { pk: r.pk, type: r.type, name: r.name, unit: r.unit, color: tmpl ? tmpl.color : '#888' };
+  });
+  // zoraď podľa pôvodného poradia v templáte
+  State.meters.sort((a, b) => {
+    const ia = METER_DEFS_TEMPLATE.findIndex(t => t.type === a.type);
+    const ib = METER_DEFS_TEMPLATE.findIndex(t => t.type === b.type);
+    return ia - ib;
+  });
+}
+
+function meterByType(type) {
+  return State.meters.find(m => m.type === type);
+}
+function meterByPk(pk) {
+  return State.meters.find(m => m.pk === pk);
+}
+
+/* =============================================================
+   SEED DATA — historické odpočty z Excelu
+   ============================================================= */
+
+// Hlavné odpočty: [date, gas, water, electricity_in, deviceTagForElec]
+// 'v1' = pôvodný elektromer, 'v2' = nový od 26.3.2025
+const SEED_MAIN = [
+  ['2023-11-04', 18413, null, 5397, 'v1'],
+  ['2023-12-02', 18461, null, 5464, 'v1'],
+  ['2024-01-01', 18546, null, 5509, 'v1'],
+  ['2024-02-04', 18662, null, 5580, 'v1'],
+  ['2024-03-03', 18696, 10,   5630, 'v1'],
+  ['2024-04-01', 18716, 14,   5688, 'v1'],
+  ['2024-05-01', 18716, 16,   5743, 'v1'],
+  ['2024-06-02', 18716, 21,   5804, 'v1'],
+  ['2024-07-01', 18716, 22,   5832, 'v1'],
+  ['2024-08-03', 18716, 24,   5878, 'v1'],
+  ['2024-09-01', 18717, 25,   5930, 'v1'],
+  ['2024-10-01', 18727, 27,   6208, 'v1'],
+  ['2024-11-01', 18904, 28,   6295, 'v1'],
+  ['2024-12-01', 19236, 29,   6418, 'v1'],
+  ['2025-01-02', 19604, 29,   6650, 'v1'],
+  ['2025-02-01', 19970, 29,   6880, 'v1'],
+  ['2025-03-02', 20320, 29,   7255, 'v1'],
+  ['2025-03-26', null,  null, 7615, 'v1'], // pomocný odpočet pred výmenou elektromera
+  ['2025-04-01', 20502, 29,   32,   'v2'],
+  ['2025-05-01', 20570, 29,   190,  'v2'],
+  ['2025-06-02', 20581, 29,   324,  'v2'],
+  ['2025-07-01', 20581, 29,   434,  'v2'],
+  ['2025-08-01', 20581, 29,   555,  'v2'],
+  ['2025-09-01', 20581, 29,   686,  'v2'],
+  ['2025-10-01', 20581, 29,   829,  'v2'],
+  ['2025-11-01', 20628, 29,   1028, 'v2'],
+  ['2025-12-01', 20779, 29,   1294, 'v2'],
+  ['2026-01-02', 21013, 29,   1624, 'v2'],
+  ['2026-02-01', 21320, 29,   1940, 'v2'],
+  ['2026-03-01', 21542, 32,   2203, 'v2'],
+  ['2026-04-01', 21644, 32,   2469, 'v2']
+];
+
+const SEED_OUT = [
+  ['2025-05-03', 1429],
+  ['2025-06-02', 2829],
+  ['2025-07-01', 4653],
+  ['2025-08-01', 6203],
+  ['2025-09-01', 7610],
+  ['2025-10-01', 8551],
+  ['2025-11-01', 9077],
+  ['2025-12-01', 9304],
+  ['2026-01-02', 9396],
+  ['2026-02-01', 9538],
+  ['2026-03-01', 9822],
+  ['2026-04-01', 10619]
+];
+
+// Rodicovsky dom - elektrina (3 generacie elektromerov: v1 do 15.4.2021, v2 do 27.3.2025, v3 dalej)
+// [date, value, deviceTag ('v1'|'v2'|'v3')]
+const SEED_PARENTS_ELEC = [
+  ['2020-01-01', 31955, 'v1'], ['2020-02-01', 32200, 'v1'], ['2020-03-01', 32423, 'v1'],
+  ['2020-04-02', 32734, 'v1'], ['2020-05-01', 33024, 'v1'], ['2020-06-01', 33319, 'v1'],
+  ['2020-07-02', 33640, 'v1'], ['2020-08-01', 33927, 'v1'], ['2020-09-01', 34218, 'v1'],
+  ['2020-10-01', 34469, 'v1'], ['2020-11-01', 34764, 'v1'], ['2020-12-01', 35060, 'v1'],
+  ['2021-01-01', 35378, 'v1'], ['2021-02-01', 35725, 'v1'], ['2021-03-01', 36024, 'v1'],
+  ['2021-04-02', 36330, 'v1'],
+  ['2021-05-01', 219, 'v2'], ['2021-06-01', 500, 'v2'], ['2021-07-02', 839, 'v2'],
+  ['2021-08-02', 1170, 'v2'], ['2021-09-01', 1476, 'v2'], ['2021-10-01', 1698, 'v2'],
+  ['2021-11-01', 1989, 'v2'], ['2021-12-02', 2301, 'v2'],
+  ['2022-01-01', 2659, 'v2'], ['2022-02-02', 3027, 'v2'], ['2022-03-02', 3327, 'v2'],
+  ['2022-04-01', 3580, 'v2'], ['2022-05-02', 3850, 'v2'], ['2022-06-03', 4108, 'v2'],
+  ['2022-07-02', 4405, 'v2'], ['2022-08-02', 4693, 'v2'], ['2022-09-01', 4987, 'v2'],
+  ['2022-10-02', 5225, 'v2'], ['2022-11-01', 5476, 'v2'], ['2022-12-01', 5774, 'v2'],
+  ['2023-01-01', 6125, 'v2'], ['2023-02-01', 6432, 'v2'], ['2023-03-02', 6703, 'v2'],
+  ['2023-04-02', 7003, 'v2'], ['2023-05-01', 7254, 'v2'], ['2023-06-01', 7510, 'v2'],
+  ['2023-07-01', 7781, 'v2'], ['2023-08-04', 8158, 'v2'], ['2023-09-01', 8492, 'v2'],
+  ['2023-10-03', 8745, 'v2'], ['2023-11-01', 8988, 'v2'], ['2023-12-02', 9297, 'v2'],
+  ['2024-01-01', 9590, 'v2'], ['2024-02-01', 9910, 'v2'], ['2024-03-02', 10192, 'v2'],
+  ['2024-04-01', 10438, 'v2'], ['2024-05-01', 10640, 'v2'], ['2024-06-02', 10870, 'v2'],
+  ['2024-07-01', 11226, 'v2'], ['2024-08-01', 11663, 'v2'], ['2024-09-01', 12049, 'v2'],
+  ['2024-10-01', 12356, 'v2'], ['2024-11-01', 12631, 'v2'], ['2024-12-01', 12929, 'v2'],
+  ['2025-01-01', 13207, 'v2'], ['2025-02-01', 13615, 'v2'], ['2025-03-01', 13861, 'v2'],
+  ['2025-03-27', 14065, 'v2', 'finálny stav pred výmenou elektromera'],
+  ['2025-04-01', 39, 'v3'], ['2025-05-01', 268, 'v3'], ['2025-06-01', 486, 'v3'],
+  ['2025-07-01', 760, 'v3'], ['2025-08-01', 1010, 'v3'], ['2025-09-01', 1261, 'v3'],
+  ['2025-10-01', 1462, 'v3'], ['2025-11-01', 1690, 'v3'], ['2025-12-01', 1946, 'v3'],
+  ['2026-01-01', 2250, 'v3'], ['2026-02-01', 2643, 'v3'], ['2026-03-01', 2951, 'v3'],
+  ['2026-04-01', 3206, 'v3']
+];
+const SEED_PARENTS_VODA = [
+  // v1 do 1.11.2020, v2 dalej
+  ['2020-01-01', 855, 'v1'], ['2020-02-01', 865, 'v1'], ['2020-03-01', 874, 'v1'],
+  ['2020-04-02', 888, 'v1'], ['2020-05-01', 913, 'v1'], ['2020-06-01', 933, 'v1'],
+  ['2020-07-02', 957, 'v1'], ['2020-08-01', 980, 'v1'], ['2020-09-01', 1001, 'v1'],
+  ['2020-10-01', 1018, 'v1'],
+  ['2020-11-01', 10, 'v2'], ['2020-12-01', 21, 'v2'],
+  ['2021-01-01', 32, 'v2'], ['2021-02-01', 44, 'v2'], ['2021-03-01', 53, 'v2'],
+  ['2021-04-02', 64, 'v2'], ['2021-05-01', 81, 'v2'], ['2021-06-01', 98, 'v2'],
+  ['2021-07-02', 130, 'v2'], ['2021-08-02', 163, 'v2'], ['2021-09-01', 185, 'v2'],
+  ['2021-10-01', 204, 'v2'], ['2021-11-01', 219, 'v2'], ['2021-12-02', 234, 'v2'],
+  ['2022-01-01', 245, 'v2'], ['2022-02-02', 256, 'v2'], ['2022-03-02', 265, 'v2'],
+  ['2022-04-01', 276, 'v2'], ['2022-05-02', 296, 'v2'], ['2022-06-03', 323, 'v2'],
+  ['2022-07-02', 353, 'v2'], ['2022-08-02', 388, 'v2'], ['2022-09-01', 418, 'v2'],
+  ['2022-10-02', 436, 'v2'], ['2022-11-01', 447, 'v2'], ['2022-12-01', 458, 'v2'],
+  ['2023-01-01', 468, 'v2'], ['2023-02-01', 476, 'v2'], ['2023-03-02', 487, 'v2'],
+  ['2023-04-02', 498, 'v2'], ['2023-05-01', 509, 'v2'], ['2023-06-01', 527, 'v2'],
+  ['2023-07-01', 553, 'v2'], ['2023-08-04', 579, 'v2'], ['2023-09-01', 594, 'v2'],
+  ['2023-10-03', 608, 'v2'], ['2023-11-01', 617, 'v2'], ['2023-12-02', 626, 'v2'],
+  ['2024-01-01', 635, 'v2'], ['2024-02-01', 645, 'v2'], ['2024-03-02', 654, 'v2'],
+  ['2024-04-01', 664, 'v2'], ['2024-05-01', 674, 'v2'], ['2024-06-02', 692, 'v2'],
+  ['2024-07-01', 715, 'v2'], ['2024-08-01', 746, 'v2'], ['2024-09-01', 779, 'v2'],
+  ['2024-10-01', 799, 'v2'], ['2024-11-01', 812, 'v2'], ['2024-12-01', 832, 'v2'],
+  ['2025-01-01', 857, 'v2'], ['2025-02-01', 877, 'v2'], ['2025-03-01', 885, 'v2'],
+  ['2025-04-01', 895, 'v2'], ['2025-05-01', 907, 'v2'], ['2025-06-01', 921, 'v2'],
+  ['2025-07-01', 946, 'v2'], ['2025-08-01', 964, 'v2'], ['2025-09-01', 985, 'v2'],
+  ['2025-10-01', 999, 'v2'], ['2025-11-01', 1008, 'v2'], ['2025-12-01', 1018, 'v2'],
+  ['2026-01-01', 1028, 'v2'], ['2026-02-01', 1037, 'v2'], ['2026-03-01', 1045, 'v2'],
+  ['2026-04-01', 1057, 'v2']
+];
+const SEED_PARENTS_PLYN = [
+  // v1 do 15.9.2023, v2 dalej
+  ['2020-01-01', 11652, 'v1'], ['2020-02-01', 11849, 'v1'], ['2020-03-01', 11990, 'v1'],
+  ['2020-04-02', 12126, 'v1'], ['2020-05-01', 12196, 'v1'], ['2020-06-01', 12248, 'v1'],
+  ['2020-07-02', 12270, 'v1'], ['2020-08-01', 12288, 'v1'], ['2020-09-01', 12302, 'v1'],
+  ['2020-10-01', 12328, 'v1'], ['2020-11-01', 12408, 'v1'], ['2020-12-01', 12545, 'v1'],
+  ['2021-01-01', 12709, 'v1'], ['2021-02-01', 12907, 'v1'], ['2021-03-01', 13068, 'v1'],
+  ['2021-04-02', 13218, 'v1'], ['2021-05-01', 13326, 'v1'], ['2021-06-01', 13378, 'v1'],
+  ['2021-07-02', 13398, 'v1'], ['2021-08-02', 13411, 'v1'], ['2021-09-01', 13428, 'v1'],
+  ['2021-10-01', 13452, 'v1'], ['2021-11-01', 13520, 'v1'], ['2021-12-02', 13652, 'v1'],
+  ['2022-01-01', 13821, 'v1'], ['2022-02-02', 13997, 'v1'], ['2022-03-02', 14128, 'v1'],
+  ['2022-04-01', 14259, 'v1'], ['2022-05-02', 14351, 'v1'], ['2022-06-03', 14372, 'v1'],
+  ['2022-07-02', 14390, 'v1'], ['2022-08-02', 14403, 'v1'], ['2022-09-01', 14416, 'v1'],
+  ['2022-10-02', 14443, 'v1'], ['2022-11-01', 14481, 'v1'], ['2022-12-01', 14580, 'v1'],
+  ['2023-01-01', 14746, 'v1'], ['2023-02-01', 14900, 'v1'], ['2023-03-02', 15049, 'v1'],
+  ['2023-04-02', 15170, 'v1'], ['2023-05-01', 15254, 'v1'], ['2023-06-01', 15283, 'v1'],
+  ['2023-07-01', 15300, 'v1'], ['2023-08-04', 15315, 'v1'], ['2023-09-01', 15326, 'v1'],
+  ['2023-10-03', 7, 'v2'], ['2023-11-01', 36, 'v2'], ['2023-12-02', 144, 'v2'],
+  ['2024-01-01', 298, 'v2'], ['2024-02-01', 464, 'v2'], ['2024-03-02', 569, 'v2'],
+  ['2024-04-01', 661, 'v2'], ['2024-05-01', 718, 'v2'], ['2024-06-02', 735, 'v2'],
+  ['2024-07-01', 754, 'v2'], ['2024-08-01', 768, 'v2'], ['2024-09-01', 780, 'v2'],
+  ['2024-10-01', 800, 'v2'], ['2024-11-01', 852, 'v2'], ['2024-12-01', 984, 'v2'],
+  ['2025-01-01', 1143, 'v2'], ['2025-02-01', 1330, 'v2'], ['2025-03-01', 1485, 'v2'],
+  ['2025-04-01', 1597, 'v2'], ['2025-05-01', 1653, 'v2'], ['2025-06-01', 1689, 'v2'],
+  ['2025-07-01', 1707, 'v2'], ['2025-08-01', 1723, 'v2'], ['2025-09-01', 1738, 'v2'],
+  ['2025-10-01', 1761, 'v2'], ['2025-11-01', 1831, 'v2'], ['2025-12-01', 1952, 'v2'],
+  ['2026-01-01', 2107, 'v2'], ['2026-02-01', 2317, 'v2'], ['2026-03-01', 2468, 'v2'],
+  ['2026-04-01', 2586, 'v2']
+];
+
+async function seedParentsHouseIfMissing() {
+  // Skontroluj či existuje "Rodičovský dom"
+  const all = await db.households.toArray();
+  if (all.some(h => h.name === 'Rodičovský dom')) return;
+
+  const hhId = await db.households.add({
+    name: 'Rodičovský dom',
+    address: '',
+    enabledMeters: ['electricity_in', 'water', 'gas'],
+    createdAt: new Date().toISOString()
+  });
+
+  // meters
+  const elecPk = await db.meters.add({ householdId: hhId, type: 'electricity_in', name: 'Elektrina – odber', unit: 'kWh' });
+  const waterPk = await db.meters.add({ householdId: hhId, type: 'water', name: 'Voda', unit: 'm³' });
+  const gasPk = await db.meters.add({ householdId: hhId, type: 'gas', name: 'Plyn', unit: 'm³' });
+
+  // ELEKTRINA - 3 zariadenia
+  const elecV1 = await db.devices.add({ householdId: hhId, meterPk: elecPk, installedDate: '2020-01-01', initialValue: 31955, replacedDate: '2021-04-15', finalValue: 36330 });
+  const elecV2 = await db.devices.add({ householdId: hhId, meterPk: elecPk, installedDate: '2021-04-15', initialValue: 0, replacedDate: '2025-03-27', finalValue: 14065 });
+  const elecV3 = await db.devices.add({ householdId: hhId, meterPk: elecPk, installedDate: '2025-03-27', initialValue: 0, replacedDate: null, finalValue: null });
+  const elecDevs = { v1: elecV1, v2: elecV2, v3: elecV3 };
+
+  // VODA - 2 zariadenia
+  const waterV1 = await db.devices.add({ householdId: hhId, meterPk: waterPk, installedDate: '2020-01-01', initialValue: 855, replacedDate: '2020-11-01', finalValue: 1018 });
+  const waterV2 = await db.devices.add({ householdId: hhId, meterPk: waterPk, installedDate: '2020-11-01', initialValue: 0, replacedDate: null, finalValue: null });
+  const waterDevs = { v1: waterV1, v2: waterV2 };
+
+  // PLYN - 2 zariadenia
+  const gasV1 = await db.devices.add({ householdId: hhId, meterPk: gasPk, installedDate: '2020-01-01', initialValue: 11652, replacedDate: '2023-09-15', finalValue: 15332 });
+  const gasV2 = await db.devices.add({ householdId: hhId, meterPk: gasPk, installedDate: '2023-09-15', initialValue: 0, replacedDate: null, finalValue: null });
+  const gasDevs = { v1: gasV1, v2: gasV2 };
+
+  const readings = [];
+  for (const [date, value, tag, note] of SEED_PARENTS_ELEC) {
+    readings.push({ householdId: hhId, meterPk: elecPk, deviceId: elecDevs[tag], date, value, note: note || null });
+  }
+  for (const [date, value, tag] of SEED_PARENTS_VODA) {
+    readings.push({ householdId: hhId, meterPk: waterPk, deviceId: waterDevs[tag], date, value });
+  }
+  for (const [date, value, tag] of SEED_PARENTS_PLYN) {
+    readings.push({ householdId: hhId, meterPk: gasPk, deviceId: gasDevs[tag], date, value });
+  }
+  await db.readings.bulkAdd(readings);
+}
+
+async function seedIfEmpty() {
+  const householdsCount = await db.households.count();
+  if (householdsCount > 0) return;
+  // Vytvor "Môj dom" s defaultnými dátami
+  const hhId = await db.households.add({
+    name: 'Môj dom',
+    address: '',
+    enabledMeters: ['electricity_in', 'electricity_out', 'water', 'gas'],
+    createdAt: new Date().toISOString()
+  });
+
+  // meters
+  const meterPks = {};
+  for (const t of METER_DEFS_TEMPLATE) {
+    const pk = await db.meters.add({
+      householdId: hhId,
+      type: t.type,
+      name: t.name,
+      unit: t.unit
+    });
+    meterPks[t.type] = pk;
+  }
+
+  // devices
+  const devices = [
+    { householdId: hhId, meterPk: meterPks['electricity_in'],  installedDate: '2023-11-04', initialValue: 5397, replacedDate: '2025-03-26', finalValue: 7615 },
+    { householdId: hhId, meterPk: meterPks['electricity_in'],  installedDate: '2025-03-26', initialValue: 0, replacedDate: null, finalValue: null },
+    { householdId: hhId, meterPk: meterPks['electricity_out'], installedDate: '2025-05-03', initialValue: 0, replacedDate: null, finalValue: null },
+    { householdId: hhId, meterPk: meterPks['water'],           installedDate: '2024-03-03', initialValue: 0, replacedDate: null, finalValue: null },
+    { householdId: hhId, meterPk: meterPks['gas'],             installedDate: '2023-11-04', initialValue: 18413, replacedDate: null, finalValue: null }
+  ];
+  // pre device, ktorý ešte nie je nahradený, vlož ako 'v2', inak 'v1'
+  const elecInV1Id = await db.devices.add(devices[0]);
+  const elecInV2Id = await db.devices.add(devices[1]);
+  const elecOutId  = await db.devices.add(devices[2]);
+  const waterId    = await db.devices.add(devices[3]);
+  const gasId      = await db.devices.add(devices[4]);
+
+  const deviceForElec = (tag) => tag === 'v1' ? elecInV1Id : elecInV2Id;
+
+  const readings = [];
+  for (const [date, gas, water, elec, devTag] of SEED_MAIN) {
+    if (gas != null) readings.push({ householdId: hhId, meterPk: meterPks['gas'], deviceId: gasId, date, value: gas });
+    if (water != null) readings.push({ householdId: hhId, meterPk: meterPks['water'], deviceId: waterId, date, value: water });
+    if (elec != null) readings.push({
+      householdId: hhId,
+      meterPk: meterPks['electricity_in'],
+      deviceId: deviceForElec(devTag),
+      date, value: elec,
+      note: date === '2025-03-26' ? 'finálny stav pred výmenou elektromera' : null
+    });
+  }
+  for (const [date, val] of SEED_OUT) {
+    readings.push({ householdId: hhId, meterPk: meterPks['electricity_out'], deviceId: elecOutId, date, value: val });
+  }
+  await db.readings.bulkAdd(readings);
+
+  await db.settings.put({ key: 'activeHousehold', value: hhId });
+  await db.settings.put({ key: 'thresholds', warn: 25, severe: 50 });
+}
+
+/* =============================================================
+   DOMAIN LOGIC
+   ============================================================= */
+
+// Vráti odpočty zoradené podľa dátumu pre dané meradlo (v rámci aktívneho domu).
+async function getReadings(meterPk) {
+  const rs = await db.readings.where('meterPk').equals(meterPk).toArray();
+  rs.sort((a, b) => a.date.localeCompare(b.date));
+  return rs;
+}
+
+// Spočíta spotrebu medzi dvoma odpočtami, korektne cez výmenu merača.
+async function computeDeltas(meterPk) {
+  const readings = await getReadings(meterPk);
+  const devices = await db.devices.where('meterPk').equals(meterPk).toArray();
+  const out = [];
+  for (let i = 1; i < readings.length; i++) {
+    const a = readings[i-1];
+    const b = readings[i];
+    let delta;
+    if (a.deviceId === b.deviceId) {
+      delta = b.value - a.value;
+    } else {
+      const oldDev = devices.find(d => d.id === a.deviceId);
+      const newDev = devices.find(d => d.id === b.deviceId);
+      delta = (oldDev.finalValue - a.value) + (b.value - newDev.initialValue);
+    }
+    out.push({ from: a.date, to: b.date, delta, reading: b });
+  }
+  return out;
+}
+
+// Mesačná spotreba normalizovaná na kalendárne mesiace (proporcionálne).
+async function monthlyConsumption(meterPk) {
+  const deltas = await computeDeltas(meterPk);
+  const months = {};
+  for (const { from, to, delta } of deltas) {
+    const dFrom = new Date(from);
+    const dTo = new Date(to);
+    const totalDays = (dTo - dFrom) / 86400000;
+    if (totalDays <= 0) continue;
+    const perDay = delta / totalDays;
+
+    let cur = new Date(dFrom);
+    while (cur < dTo) {
+      const ym = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0');
+      const monthEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+      const segmentEnd = monthEnd < dTo ? monthEnd : dTo;
+      const days = (segmentEnd - cur) / 86400000;
+      months[ym] = (months[ym] || 0) + perDay * days;
+      cur = segmentEnd;
+    }
+  }
+  return months;
+}
+
+async function yearlyConsumption(meterPk) {
+  const monthly = await monthlyConsumption(meterPk);
+  const years = {};
+  for (const [ym, val] of Object.entries(monthly)) {
+    const y = ym.split('-')[0];
+    years[y] = (years[y] || 0) + val;
+  }
+  return years;
+}
+
+async function detectAnomalies() {
+  const settings = await db.settings.get('thresholds') || { warn: 25, severe: 50 };
+  const out = [];
+  for (const m of State.meters) {
+    const monthly = await monthlyConsumption(m.pk);
+    const byMonth = {};
+    for (const [ym, v] of Object.entries(monthly)) {
+      const month = parseInt(ym.split('-')[1]);
+      const year = parseInt(ym.split('-')[0]);
+      byMonth[month] = byMonth[month] || [];
+      byMonth[month].push({ year, val: v, ym });
+    }
+    for (const [month, entries] of Object.entries(byMonth)) {
+      if (entries.length < 2) continue;
+      entries.sort((a, b) => a.year - b.year);
+      for (let i = 1; i < entries.length; i++) {
+        const cur = entries[i];
+        const prev = entries.slice(0, i);
+        const avg = prev.reduce((s, p) => s + p.val, 0) / prev.length;
+        if (avg < 1) continue;
+        const pct = ((cur.val - avg) / avg) * 100;
+        if (pct >= settings.severe) {
+          out.push({ severity: 'severe', meter: m, ym: cur.ym, current: cur.val, avg, pct });
+        } else if (pct >= settings.warn) {
+          out.push({ severity: 'warn', meter: m, ym: cur.ym, current: cur.val, avg, pct });
+        }
+      }
+    }
+  }
+  out.sort((a, b) => b.ym.localeCompare(a.ym));
+  return out;
+}
+
+function meterDef(typeOrPk) {
+  // pre kompatibilitu s grafmi - prijíma type alebo pk
+  if (typeOrPk === 'electricity_net') return { name: 'Elektrina – netto bilancia', unit: 'kWh', color: '#a78bfa', type: 'electricity_net' };
+  if (typeof typeOrPk === 'string') {
+    return State.meters.find(m => m.type === typeOrPk);
+  }
+  return State.meters.find(m => m.pk === typeOrPk);
+}
+
+/* =============================================================
+   FORMATTING
+   ============================================================= */
+
+function fmtNum(n, decimals = 0) {
+  if (n == null || isNaN(n)) return '—';
+  return new Intl.NumberFormat('sk-SK', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(n);
+}
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('sk-SK', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function fmtMonth(ym) {
+  const [y, m] = ym.split('-');
+  const date = new Date(parseInt(y), parseInt(m) - 1, 1);
+  return date.toLocaleDateString('sk-SK', { month: 'short', year: 'numeric' });
+}
+
+/* =============================================================
+   UI: DASHBOARD
+   ============================================================= */
+
+async function renderDashboard() {
+  const grid = document.getElementById('metersGrid');
+  grid.innerHTML = '';
+
+  const now = new Date();
+  const curYM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+
+  let latestDate = null;
+
+  for (const m of State.meters) {
+    const readings = await getReadings(m.pk);
+    if (readings.length === 0) {
+      const card = document.createElement('div');
+      card.className = 'meter-card';
+      card.dataset.type = m.type;
+      card.innerHTML = `
+        <div class="meter-bar"></div>
+        <div class="meter-label">${m.name}</div>
+        <div class="meter-value" style="color: var(--ink-3)">—</div>
+        <div class="meter-unit">${m.unit}</div>
+        <div class="meter-meta"><span>Žiadne dáta</span></div>
+      `;
+      card.addEventListener('click', () => openAddModal(m.pk));
+      grid.appendChild(card);
+      continue;
+    }
+
+    const last = readings[readings.length - 1];
+    if (!latestDate || last.date > latestDate) latestDate = last.date;
+
+    const monthly = await monthlyConsumption(m.pk);
+    const curMonth = monthly[curYM] || 0;
+
+    const prevYM = (now.getFullYear() - 1) + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const prevMonth = monthly[prevYM];
+    let deltaHTML = '<span class="delta flat">—</span>';
+    if (prevMonth != null && prevMonth > 0) {
+      const pct = ((curMonth - prevMonth) / prevMonth) * 100;
+      const dir = pct > 1 ? 'up' : pct < -1 ? 'down' : 'flat';
+      const arrow = dir === 'up' ? '↑' : dir === 'down' ? '↓' : '→';
+      deltaHTML = `<span class="delta ${dir}">${arrow} ${fmtNum(Math.abs(pct), 0)}%</span>`;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'meter-card';
+    card.dataset.type = m.type;
+    card.dataset.pk = m.pk;
+    card.innerHTML = `
+      <div class="meter-bar"></div>
+      <div class="meter-label">${m.name}</div>
+      <div class="meter-value">${fmtNum(last.value, 0)}</div>
+      <div class="meter-unit">${m.unit} · stav počítadla</div>
+      <div class="meter-meta">
+        <span>${fmtNum(curMonth, 0)} ${m.unit} tento mes.</span>
+        ${deltaHTML}
+      </div>
+    `;
+    card.addEventListener('click', () => openAddModal(m.pk));
+    grid.appendChild(card);
+  }
+
+  document.getElementById('lastUpdated').textContent = latestDate ? 'posl. odpočet ' + fmtDate(latestDate) : '';
+
+  await renderCompareChart();
+  await renderYearly();
+}
+
+let compareChart;
+async function renderCompareChart() {
+  const ctx = document.getElementById('chartCompare').getContext('2d');
+  if (compareChart) compareChart.destroy();
+
+  const now = new Date();
+  const curMonth = now.getMonth() + 1;
+  const curMonthStr = String(curMonth).padStart(2, '0');
+
+  const datasets = [];
+  const labels = [];
+
+  for (const m of State.meters) {
+    const monthly = await monthlyConsumption(m.pk);
+    const years = new Set(Object.keys(monthly).map(k => k.split('-')[0]));
+    const sortedYears = [...years].sort();
+    const data = sortedYears.map(y => monthly[y + '-' + curMonthStr] || 0);
+    if (labels.length === 0) labels.push(...sortedYears);
+    datasets.push({
+      label: m.name,
+      data: data,
+      backgroundColor: m.color,
+      borderColor: m.color,
+      borderWidth: 1
+    });
+  }
+
+  if (labels.length === 0) {
+    // žiadne historické dáta – zobraz placeholder
+    ctx.font = '14px Inter';
+    ctx.fillStyle = '#75726c';
+    ctx.textAlign = 'center';
+    ctx.fillText('Zatiaľ nemáš dáta k porovnaniu.', ctx.canvas.width / 2, ctx.canvas.height / 2);
+    return;
+  }
+
+  compareChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#b8b3a9', font: { family: 'Inter' } } },
+        title: {
+          display: true,
+          text: now.toLocaleDateString('sk-SK', { month: 'long' }).toUpperCase() + ' — porovnanie cez roky',
+          color: '#75726c', font: { family: 'JetBrains Mono', size: 11, weight: 'normal' }
+        },
+        tooltip: {
+          backgroundColor: '#1d2024',
+          titleColor: '#f4ede4',
+          bodyColor: '#b8b3a9',
+          borderColor: '#383d44',
+          borderWidth: 1
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } },
+        y: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } }
+      }
+    }
+  });
+}
+
+async function renderYearly() {
+  const card = document.getElementById('yearlyCard');
+
+  const allYears = new Set();
+  const dataByMeter = {};
+  for (const m of State.meters) {
+    const yearly = await yearlyConsumption(m.pk);
+    dataByMeter[m.type] = yearly;
+    for (const y of Object.keys(yearly)) allYears.add(y);
+  }
+  const sortedYears = [...allYears].sort().reverse();
+
+  card.innerHTML = '';
+  if (sortedYears.length === 0) {
+    card.innerHTML = '<div class="anomaly-empty">Žiadne dáta zatiaľ.</div>';
+    return;
+  }
+  const html = ['<table><thead><tr><th>Rok</th>'];
+  for (const m of State.meters) html.push(`<th class="num">${m.name} (${m.unit})</th>`);
+  const showNet = State.meters.some(m => m.type === 'electricity_in') && State.meters.some(m => m.type === 'electricity_out');
+  if (showNet) html.push('<th class="num">Netto el. (kWh)</th>');
+  html.push('</tr></thead><tbody>');
+  for (const y of sortedYears) {
+    html.push(`<tr><td><strong>${y}</strong></td>`);
+    for (const m of State.meters) {
+      const v = dataByMeter[m.type][y];
+      html.push(`<td class="num">${v != null ? fmtNum(v, 0) : '—'}</td>`);
+    }
+    if (showNet) {
+      const inV = (dataByMeter['electricity_in'] && dataByMeter['electricity_in'][y]) || 0;
+      const outV = (dataByMeter['electricity_out'] && dataByMeter['electricity_out'][y]) || 0;
+      const net = inV - outV;
+      let netCls = '';
+      const hasOut = dataByMeter['electricity_out'] && dataByMeter['electricity_out'][y] != null;
+      if (hasOut) netCls = net < 0 ? 'style="color: var(--good)"' : 'style="color: var(--warn)"';
+      html.push(`<td class="num" ${netCls}>${hasOut ? (net > 0 ? '+' : '') + fmtNum(net, 0) : '—'}</td>`);
+    }
+    html.push('</tr>');
+  }
+  html.push('</tbody></table>');
+  card.innerHTML = html.join('');
+}
+
+/* =============================================================
+   UI: HISTORY (filter, search, sort, edit)
+   ============================================================= */
+
+const historyState = {
+  meterFilter: 'all',      // 'all' alebo meter.id
+  search: '',
+  dateFilter: 'all',
+  sortBy: 'date',          // date | meter | value | delta
+  sortDir: 'desc'          // asc | desc
+};
+
+function renderHistoryFilterPills() {
+  const pills = document.getElementById('historyFilterPills');
+  pills.innerHTML = '';
+  const all = document.createElement('button');
+  all.className = 'filter-pill' + (historyState.meterFilter === 'all' ? ' active' : '');
+  all.textContent = 'Všetky';
+  all.addEventListener('click', () => { historyState.meterFilter = 'all'; renderHistory(); });
+  pills.appendChild(all);
+  for (const m of State.meters) {
+    const p = document.createElement('button');
+    p.className = 'filter-pill' + (historyState.meterFilter === m.pk ? ' active' : '');
+    p.innerHTML = `<span class="pill-dot" style="background: ${m.color}"></span>${m.name}`;
+    p.addEventListener('click', () => { historyState.meterFilter = m.pk; renderHistory(); });
+    pills.appendChild(p);
+  }
+}
+
+function updateSortHeaders() {
+  document.querySelectorAll('th.sortable').forEach(th => {
+    const isActive = th.dataset.sort === historyState.sortBy;
+    th.classList.toggle('active', isActive);
+    const arrow = th.querySelector('.sort-arrow');
+    if (arrow) arrow.textContent = isActive ? (historyState.sortDir === 'asc' ? '▲' : '▼') : '▼';
+  });
+}
+
+async function renderHistory() {
+  renderHistoryFilterPills();
+  updateSortHeaders();
+
+  const tbody = document.getElementById('historyBody');
+  tbody.innerHTML = '';
+
+  // všetky readingy spojené, s deltou
+  const all = [];
+  const metersToProcess = historyState.meterFilter === 'all'
+    ? State.meters
+    : State.meters.filter(m => m.pk === historyState.meterFilter);
+
+  for (const m of metersToProcess) {
+    const rs = await getReadings(m.pk);
+    const deltas = await computeDeltas(m.pk);
+    for (const r of rs) {
+      const delta = deltas.find(d => d.reading.id === r.id);
+      all.push({
+        ...r,
+        meter: m,
+        delta: delta ? delta.delta : null,
+        meterName: m.name
+      });
+    }
+  }
+
+  // dátumový filter
+  const now = new Date();
+  let filtered = all;
+  if (historyState.dateFilter !== 'all') {
+    if (historyState.dateFilter === 'last12') {
+      const cutoff = new Date(now);
+      cutoff.setMonth(cutoff.getMonth() - 12);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      filtered = filtered.filter(r => r.date >= cutoffStr);
+    } else {
+      filtered = filtered.filter(r => r.date.startsWith(historyState.dateFilter));
+    }
+  }
+
+  // search
+  if (historyState.search) {
+    const q = historyState.search.toLowerCase();
+    filtered = filtered.filter(r =>
+      (r.note && r.note.toLowerCase().includes(q)) ||
+      String(r.value).includes(q) ||
+      r.meterName.toLowerCase().includes(q) ||
+      r.date.includes(q)
+    );
+  }
+
+  // sort
+  const dir = historyState.sortDir === 'asc' ? 1 : -1;
+  filtered.sort((a, b) => {
+    let av, bv;
+    switch (historyState.sortBy) {
+      case 'date': av = a.date; bv = b.date; break;
+      case 'meter': av = a.meterName; bv = b.meterName; break;
+      case 'value': av = a.value; bv = b.value; break;
+      case 'delta': av = a.delta == null ? -Infinity : a.delta; bv = b.delta == null ? -Infinity : b.delta; break;
+    }
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+
+  document.getElementById('historyCount').textContent = filtered.length + ' / ' + all.length + ' záznamov';
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="history-empty">Žiadne záznamy nezodpovedajú filtru.</div></td></tr>';
+    return;
+  }
+
+  for (const r of filtered) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${fmtDate(r.date)}</td>
+      <td><span class="badge" style="background: ${r.meter.color}22; color: ${r.meter.color}">${r.meter.name}</span></td>
+      <td class="num">${fmtNum(r.value, 0)} ${r.meter.unit}</td>
+      <td class="num">${r.delta != null ? fmtNum(r.delta, 0) + ' ' + r.meter.unit : '—'}</td>
+      <td>${r.note || ''}</td>
+      <td>
+        <div class="row-actions">
+          <button class="row-btn" data-id="${r.id}" data-action="edit" title="Upraviť">✎</button>
+          <button class="row-btn danger" data-id="${r.id}" data-action="delete" title="Zmazať">×</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  tbody.querySelectorAll('button[data-action="delete"]').forEach(b => {
+    b.addEventListener('click', async (e) => {
+      const id = parseInt(e.currentTarget.dataset.id);
+      if (confirm('Zmazať tento odpočet?')) {
+        await cloudDeleteReading(id);
+        await db.readings.delete(id);
+        toast('Odpočet zmazaný');
+        await refresh();
+      }
+    });
+  });
+  tbody.querySelectorAll('button[data-action="edit"]').forEach(b => {
+    b.addEventListener('click', async (e) => {
+      const id = parseInt(e.currentTarget.dataset.id);
+      await openEditModal(id);
+    });
+  });
+}
+
+/* =============================================================
+   EDIT READING
+   ============================================================= */
+
+let editingId = null;
+
+async function openEditModal(id) {
+  const r = await db.readings.get(id);
+  if (!r) return;
+  editingId = id;
+  const def = meterDef(r.meterPk);
+  document.getElementById('editSub').textContent = def.name + ' · stav v ' + def.unit;
+  document.getElementById('editDate').value = r.date;
+  document.getElementById('editValue').value = r.value;
+  document.getElementById('editNote').value = r.note || '';
+  document.getElementById('editHint').textContent = '';
+  document.getElementById('editHint').className = 'field-hint';
+  document.getElementById('editModal').classList.remove('hidden');
+}
+
+async function updateEditHint() {
+  const hint = document.getElementById('editHint');
+  hint.className = 'field-hint';
+  hint.textContent = '';
+  if (!editingId) return;
+  const r = await db.readings.get(editingId);
+  if (!r) return;
+  const newDate = document.getElementById('editDate').value;
+  const newValue = parseFloat(document.getElementById('editValue').value);
+  if (isNaN(newValue) || !newDate) return;
+
+  const all = await getReadings(r.meterPk);
+  const myIdx = all.findIndex(x => x.id === r.id);
+  const before = myIdx > 0 ? all[myIdx - 1] : null;
+  const after = myIdx < all.length - 1 ? all[myIdx + 1] : null;
+
+  const def = meterDef(r.meterPk);
+  const issues = [];
+  if (before && newDate <= before.date) issues.push(`Dátum musí byť po ${fmtDate(before.date)}`);
+  if (after && newDate >= after.date) issues.push(`Dátum musí byť pred ${fmtDate(after.date)}`);
+
+  const devices = await db.devices.where('meterPk').equals(r.meterPk).toArray();
+  const myDev = devices.find(d => d.id === r.deviceId);
+  if (before && before.deviceId === r.deviceId && newValue < before.value) {
+    issues.push(`Hodnota nižšia než predchádzajúca (${fmtNum(before.value)})`);
+  }
+  if (after && after.deviceId === r.deviceId && newValue > after.value) {
+    issues.push(`Hodnota vyššia než nasledujúca (${fmtNum(after.value)})`);
+  }
+
+  if (issues.length > 0) {
+    hint.className = 'field-hint bad';
+    hint.textContent = '⚠ ' + issues.join(' · ');
+  } else if (before) {
+    let delta;
+    if (before.deviceId === r.deviceId) {
+      delta = newValue - before.value;
+    } else {
+      const oldDev = devices.find(d => d.id === before.deviceId);
+      delta = (oldDev.finalValue - before.value) + (newValue - myDev.initialValue);
+    }
+    const days = Math.max(1, (new Date(newDate) - new Date(before.date)) / 86400000);
+    hint.textContent = `Spotreba: ${fmtNum(delta, 0)} ${def.unit} za ${Math.round(days)} dní`;
+  }
+}
+
+async function saveEdit() {
+  if (editingId == null) return;
+  const newDate = document.getElementById('editDate').value;
+  const newValue = parseFloat(document.getElementById('editValue').value);
+  const newNote = document.getElementById('editNote').value || null;
+  if (isNaN(newValue) || !newDate) { toast('Vyplň hodnotu a dátum', true); return; }
+
+  const r = await db.readings.get(editingId);
+  if (!r) return;
+
+  const all = await getReadings(r.meterPk);
+  const myIdx = all.findIndex(x => x.id === r.id);
+  const before = myIdx > 0 ? all[myIdx - 1] : null;
+  const after = myIdx < all.length - 1 ? all[myIdx + 1] : null;
+  if (before && newDate <= before.date) { toast('Dátum musí byť po ' + fmtDate(before.date), true); return; }
+  if (after && newDate >= after.date) { toast('Dátum musí byť pred ' + fmtDate(after.date), true); return; }
+
+  if (before && before.deviceId === r.deviceId && newValue < before.value) {
+    if (!confirm('Hodnota klesla pod predchádzajúcu. Naozaj?')) return;
+  }
+  if (after && after.deviceId === r.deviceId && newValue > after.value) {
+    if (!confirm('Hodnota stúpla nad nasledujúcu. Naozaj?')) return;
+  }
+
+  await db.readings.update(editingId, { date: newDate, value: newValue, note: newNote });
+  document.getElementById('editModal').classList.add('hidden');
+  editingId = null;
+  toast('Zmeny uložené');
+  await refresh();
+  schedulePush();
+}
+
+/* =============================================================
+   UI: CHARTS
+   ============================================================= */
+
+function populateChartSelector() {
+  const sel = document.getElementById('chartMeter');
+  if (sel.dataset.hh === String(State.activeHouseholdId)) return; // už populated
+  sel.innerHTML = '';
+  for (const m of State.meters) {
+    const opt = document.createElement('option');
+    opt.value = m.type;
+    opt.textContent = m.name;
+    sel.appendChild(opt);
+  }
+  // virtual netto - len ak má dom obe (in a out)
+  if (meterByType('electricity_in') && meterByType('electricity_out')) {
+    const opt = document.createElement('option');
+    opt.value = 'electricity_net';
+    opt.textContent = 'Elektrina – netto bilancia';
+    sel.appendChild(opt);
+  }
+  sel.dataset.hh = String(State.activeHouseholdId);
+}
+
+let mainChart;
+async function renderChart() {
+  populateChartSelector();
+  const meterType = document.getElementById('chartMeter').value;
+  const view = document.getElementById('chartView').value;
+  const def = meterDef(meterType);
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  if (mainChart) mainChart.destroy();
+
+  // Helper: get pk for type, or null for virtual 'electricity_net'
+  const meterPk = meterType === 'electricity_net' ? null : (meterByType(meterType) ? meterByType(meterType).pk : null);
+
+  // Ak meradlo nie je v aktívnom dome, daj placeholder
+  if (meterType !== 'electricity_net' && !meterPk) {
+    ctx.font = '14px Inter';
+    ctx.fillStyle = '#75726c';
+    ctx.textAlign = 'center';
+    ctx.fillText('Toto meradlo nie je v aktívnom dome.', ctx.canvas.width / 2, ctx.canvas.height / 2);
+    return;
+  }
+
+  if (view === 'cumulative') {
+    let datasets;
+    if (meterType === 'electricity_net') {
+      const inMeter = meterByType('electricity_in');
+      const outMeter = meterByType('electricity_out');
+      if (!inMeter || !outMeter) {
+        ctx.font = '14px Inter';
+        ctx.fillStyle = '#75726c';
+        ctx.textAlign = 'center';
+        ctx.fillText('Pre netto bilanciu treba aj odber aj predaj.', ctx.canvas.width / 2, ctx.canvas.height / 2);
+        return;
+      }
+      const inMonthly = await monthlyConsumption(inMeter.pk);
+      const outMonthly = await monthlyConsumption(outMeter.pk);
+      const allYM = new Set([...Object.keys(inMonthly), ...Object.keys(outMonthly)]);
+      const sorted = [...allYM].sort();
+      let cum = 0;
+      const data = sorted.map(ym => {
+        cum += (inMonthly[ym] || 0) - (outMonthly[ym] || 0);
+        return cum;
+      });
+      datasets = [{ label: def.name + ' (kumul.)', data, borderColor: def.color, backgroundColor: def.color + '33', tension: 0.2, fill: true }];
+      mainChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: sorted.map(fmtMonth), datasets },
+        options: chartOpts(def.unit)
+      });
+      return;
+    }
+    const readings = await getReadings(meterPk);
+    const devices = await db.devices.where('meterPk').equals(meterPk).toArray();
+    let cum = 0;
+    const points = [];
+    let prev = null;
+    for (const r of readings) {
+      if (prev) {
+        let delta;
+        if (prev.deviceId === r.deviceId) {
+          delta = r.value - prev.value;
+        } else {
+          const oldDev = devices.find(d => d.id === prev.deviceId);
+          const newDev = devices.find(d => d.id === r.deviceId);
+          delta = (oldDev.finalValue - prev.value) + (r.value - newDev.initialValue);
+        }
+        cum += delta;
+      } else {
+        cum = 0;
+      }
+      points.push({ x: fmtDate(r.date), y: cum });
+      prev = r;
+    }
+    datasets = [{ label: def.name + ' (kumul.)', data: points.map(p => p.y), borderColor: def.color, backgroundColor: def.color + '33', tension: 0.2, fill: true }];
+    mainChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: points.map(p => p.x), datasets },
+      options: chartOpts(def.unit)
+    });
+    return;
+  }
+
+  if (view === 'yearOverYear') {
+    let monthly;
+    if (meterType === 'electricity_net') {
+      const inMeter = meterByType('electricity_in');
+      const outMeter = meterByType('electricity_out');
+      const inM = inMeter ? await monthlyConsumption(inMeter.pk) : {};
+      const outM = outMeter ? await monthlyConsumption(outMeter.pk) : {};
+      monthly = {};
+      const all = new Set([...Object.keys(inM), ...Object.keys(outM)]);
+      for (const k of all) monthly[k] = (inM[k] || 0) - (outM[k] || 0);
+    } else {
+      monthly = await monthlyConsumption(meterPk);
+    }
+    const byYear = {};
+    for (const [ym, v] of Object.entries(monthly)) {
+      const [y, m] = ym.split('-');
+      byYear[y] = byYear[y] || Array(12).fill(null);
+      byYear[y][parseInt(m) - 1] = v;
+    }
+    const months = ['Jan','Feb','Mar','Apr','Máj','Jún','Júl','Aug','Sep','Okt','Nov','Dec'];
+    const palette = ['#75726c', '#ffb547', '#c8ff3e', '#4cc9f0', '#a78bfa'];
+    const datasets = Object.keys(byYear).sort().map((y, i) => ({
+      label: y,
+      data: byYear[y],
+      borderColor: palette[i % palette.length],
+      backgroundColor: palette[i % palette.length] + '22',
+      tension: 0.25,
+      borderWidth: 2,
+      pointRadius: 4
+    }));
+    mainChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: months, datasets },
+      options: chartOpts(def.unit)
+    });
+    return;
+  }
+
+  // monthly view
+  let monthly;
+  if (meterType === 'electricity_net') {
+    const inMeter = meterByType('electricity_in');
+    const outMeter = meterByType('electricity_out');
+    const inM = inMeter ? await monthlyConsumption(inMeter.pk) : {};
+    const outM = outMeter ? await monthlyConsumption(outMeter.pk) : {};
+    monthly = {};
+    const all = new Set([...Object.keys(inM), ...Object.keys(outM)]);
+    for (const k of all) monthly[k] = (inM[k] || 0) - (outM[k] || 0);
+  } else {
+    monthly = await monthlyConsumption(meterPk);
+  }
+  const sorted = Object.keys(monthly).sort();
+  const data = sorted.map(k => monthly[k]);
+  mainChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(fmtMonth),
+      datasets: [{ label: def.name, data, backgroundColor: def.color, borderColor: def.color, borderWidth: 1 }]
+    },
+    options: chartOpts(def.unit)
+  });
+}
+
+function chartOpts(unit) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: '#b8b3a9' } },
+      tooltip: {
+        backgroundColor: '#1d2024',
+        titleColor: '#f4ede4',
+        bodyColor: '#b8b3a9',
+        borderColor: '#383d44',
+        borderWidth: 1,
+        callbacks: {
+          label: (c) => `${c.dataset.label}: ${fmtNum(c.parsed.y, 0)} ${unit}`
+        }
+      }
+    },
+    scales: {
+      x: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } },
+      y: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } }
+    }
+  };
+}
+
+/* =============================================================
+   UI: ANOMALIES
+   ============================================================= */
+
+async function renderAnomalies() {
+  const list = document.getElementById('anomaliesList');
+  const data = await detectAnomalies();
+  if (data.length === 0) {
+    list.innerHTML = '<div class="anomaly-empty">Žiadne anomálie. 🌿 Spotreba je v rámci očakávaní.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const a of data) {
+    const def = a.meter;
+    const div = document.createElement('div');
+    div.className = 'anomaly' + (a.severity === 'severe' ? ' severe' : '');
+    div.innerHTML = `
+      <div class="anomaly-text">
+        <div class="a-title">${def.name} — ${fmtMonth(a.ym)}</div>
+        <div class="a-detail">spotreba ${fmtNum(a.current, 0)} ${def.unit}, priemer minulých rokov ${fmtNum(a.avg, 0)} ${def.unit}</div>
+      </div>
+      <span class="badge ${a.severity === 'severe' ? 'bad' : 'warn'}">+${fmtNum(a.pct, 0)}%</span>
+    `;
+    list.appendChild(div);
+  }
+}
+
+/* =============================================================
+   UI: ADD READING MODAL
+   ============================================================= */
+
+let addPickedMeter = null; // teraz pk (number)
+
+function openAddModal(presetMeterPk = null) {
+  document.getElementById('addModal').classList.remove('hidden');
+  document.getElementById('addDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('addValue').value = '';
+  document.getElementById('addNote').value = '';
+  document.getElementById('addHint').textContent = '';
+  document.getElementById('addHint').className = 'field-hint';
+  ocrReset();
+
+  const picker = document.getElementById('addMeterPicker');
+  picker.innerHTML = '';
+  for (const m of State.meters) {
+    const btn = document.createElement('button');
+    btn.className = 'meter-pick' + (m.pk === presetMeterPk ? ' active' : '');
+    btn.dataset.pk = m.pk;
+    btn.innerHTML = `<span class="pick-label">${m.unit}</span><span class="pick-name">${m.name}</span>`;
+    btn.addEventListener('click', () => {
+      picker.querySelectorAll('.meter-pick').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      addPickedMeter = m.pk;
+      updateAddHint();
+    });
+    picker.appendChild(btn);
+  }
+  addPickedMeter = presetMeterPk;
+
+  document.getElementById('addValue').addEventListener('input', updateAddHint);
+  document.getElementById('addDate').addEventListener('change', updateAddHint);
+  updateAddHint();
+}
+
+async function updateAddHint() {
+  const hint = document.getElementById('addHint');
+  hint.className = 'field-hint';
+  hint.textContent = '';
+  if (!addPickedMeter) return;
+  const value = parseFloat(document.getElementById('addValue').value);
+  const date = document.getElementById('addDate').value;
+  if (isNaN(value) || !date) return;
+
+  const readings = await getReadings(addPickedMeter);
+  const last = readings[readings.length - 1];
+  if (!last) {
+    hint.textContent = 'Prvý odpočet pre toto meradlo.';
+    return;
+  }
+
+  const devices = await db.devices.where('meterPk').equals(addPickedMeter).toArray();
+  const lastDev = devices.find(d => d.id === last.deviceId);
+  const activeDev = devices.find(d => !d.replacedDate);
+
+  if (date <= last.date) {
+    hint.className = 'field-hint bad';
+    hint.textContent = '⚠ Dátum musí byť po ' + fmtDate(last.date);
+    return;
+  }
+
+  let delta;
+  if (lastDev && activeDev && lastDev.id === activeDev.id) {
+    delta = value - last.value;
+    if (value < last.value) {
+      hint.className = 'field-hint bad';
+      hint.textContent = `⚠ Hodnota klesla pod predchádzajúci stav (${fmtNum(last.value)}). Vymenil sa merač?`;
+      return;
+    }
+  } else if (lastDev && activeDev) {
+    delta = (lastDev.finalValue - last.value) + (value - activeDev.initialValue);
+  } else {
+    return;
+  }
+
+  const def = meterDef(addPickedMeter);
+  const days = (new Date(date) - new Date(last.date)) / 86400000;
+  const perDay = days > 0 ? delta / days : 0;
+  hint.textContent = `Spotreba: ${fmtNum(delta, 0)} ${def.unit} za ${Math.round(days)} dní (≈ ${fmtNum(perDay, 1)} ${def.unit}/deň)`;
+
+  // anomália hint
+  const monthly = await monthlyConsumption(addPickedMeter);
+  const month = new Date(date).getMonth() + 1;
+  const yearsSameMonth = Object.keys(monthly).filter(ym => parseInt(ym.split('-')[1]) === month && ym !== (new Date(date).getFullYear() + '-' + String(month).padStart(2, '0')));
+  if (yearsSameMonth.length > 0) {
+    const avg = yearsSameMonth.reduce((s, ym) => s + monthly[ym], 0) / yearsSameMonth.length;
+    if (avg > 1) {
+      const pct = ((delta - avg) / avg) * 100;
+      if (Math.abs(pct) >= 25) {
+        hint.className = 'field-hint warn';
+        hint.textContent += ` · ${pct > 0 ? '+' : ''}${fmtNum(pct, 0)}% vs priemer rovnakého mesiaca`;
+      }
+    }
+  }
+}
+
+async function saveReading() {
+  if (!addPickedMeter) { toast('Vyber meradlo', true); return; }
+  const value = parseFloat(document.getElementById('addValue').value);
+  const date = document.getElementById('addDate').value;
+  const note = document.getElementById('addNote').value || null;
+  if (isNaN(value) || !date) { toast('Vyplň hodnotu a dátum', true); return; }
+
+  const readings = await getReadings(addPickedMeter);
+  const last = readings[readings.length - 1];
+  if (last && date <= last.date) { toast('Dátum musí byť neskorší', true); return; }
+
+  const devices = await db.devices.where('meterPk').equals(addPickedMeter).toArray();
+  const activeDev = devices.find(d => !d.replacedDate);
+  if (!activeDev) { toast('Neexistuje aktívne zariadenie', true); return; }
+
+  if (last && last.deviceId === activeDev.id && value < last.value) {
+    if (!confirm('Hodnota je nižšia než predchádzajúca. Naozaj uložiť?')) return;
+  }
+
+  await db.readings.add({
+    householdId: State.activeHouseholdId,
+    meterPk: addPickedMeter,
+    deviceId: activeDev.id,
+    date, value, note
+  });
+  document.getElementById('addModal').classList.add('hidden');
+  ocrReset();
+  toast('Odpočet uložený');
+  await refresh();
+  schedulePush();
+}
+
+/* =============================================================
+   UI: REPLACE DEVICE
+   ============================================================= */
+
+function openDeviceModal() {
+  document.getElementById('deviceModal').classList.remove('hidden');
+  document.getElementById('devDate').value = new Date().toISOString().split('T')[0];
+  // populate meter select
+  const sel = document.getElementById('devMeter');
+  sel.innerHTML = '';
+  for (const m of State.meters) {
+    const opt = document.createElement('option');
+    opt.value = m.pk;
+    opt.textContent = m.name;
+    sel.appendChild(opt);
+  }
+}
+
+async function saveDevice() {
+  const meterPk = parseInt(document.getElementById('devMeter').value);
+  const date = document.getElementById('devDate').value;
+  const oldFinal = parseFloat(document.getElementById('devOldFinal').value);
+  const newInit = parseFloat(document.getElementById('devNewInit').value);
+  if (!date || isNaN(oldFinal) || isNaN(newInit)) { toast('Vyplň všetky polia', true); return; }
+
+  const devices = await db.devices.where('meterPk').equals(meterPk).toArray();
+  const active = devices.find(d => !d.replacedDate);
+  if (active) {
+    await db.devices.update(active.id, { replacedDate: date, finalValue: oldFinal });
+  }
+  await db.devices.add({
+    householdId: State.activeHouseholdId,
+    meterPk,
+    installedDate: date, initialValue: newInit, replacedDate: null, finalValue: null
+  });
+  document.getElementById('deviceModal').classList.add('hidden');
+  toast('Výmena zaznamenaná');
+  await refresh();
+  schedulePush();
+}
+
+/* =============================================================
+   IMPORT / EXPORT
+   ============================================================= */
+
+async function exportData() {
+  const data = {
+    version: 2,
+    exported: new Date().toISOString(),
+    households: await db.households.toArray(),
+    activeHouseholdId: State.activeHouseholdId,
+    meters: await db.meters.toArray(),
+    devices: await db.devices.toArray(),
+    readings: await db.readings.toArray(),
+    settings: await db.settings.toArray()
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'spotreba-' + new Date().toISOString().split('T')[0] + '.json';
+  a.click();
+  toast('Export hotový');
+}
+
+async function importData(file) {
+  const text = await file.text();
+  const data = JSON.parse(text);
+  if (!confirm('Import nahradí všetky aktuálne dáta. Pokračovať?')) return;
+
+  await db.households.clear();
+  await db.meters.clear();
+  await db.devices.clear();
+  await db.readings.clear();
+  await db.settings.clear();
+
+  // v1 export (žiadne households) - zaobal do "Môj dom"
+  if (data.version === 1 || !data.households) {
+    const hhId = await db.households.add({
+      name: 'Môj dom',
+      address: '',
+      enabledMeters: ['electricity_in', 'electricity_out', 'water', 'gas'],
+      createdAt: new Date().toISOString()
+    });
+    // staré meters mali ID = type. Mapnem na nové pk
+    const oldToNewPk = {};
+    if (data.meters) {
+      for (const m of data.meters) {
+        const pk = await db.meters.add({
+          householdId: hhId, type: m.type, name: m.name, unit: m.unit
+        });
+        oldToNewPk[m.id || m.type] = pk;
+      }
+    }
+    if (data.devices) {
+      for (const d of data.devices) {
+        await db.devices.add({
+          householdId: hhId,
+          meterPk: oldToNewPk[d.meterId],
+          installedDate: d.installedDate,
+          initialValue: d.initialValue,
+          replacedDate: d.replacedDate,
+          finalValue: d.finalValue
+        });
+      }
+    }
+    if (data.readings) {
+      for (const r of data.readings) {
+        await db.readings.add({
+          householdId: hhId,
+          meterPk: oldToNewPk[r.meterId],
+          deviceId: r.deviceId,
+          date: r.date,
+          value: r.value,
+          note: r.note
+        });
+      }
+    }
+    if (data.settings) await db.settings.bulkAdd(data.settings);
+    await db.settings.put({ key: 'activeHousehold', value: hhId });
+  } else {
+    // v2 export - priame nahranie
+    if (data.households) await db.households.bulkAdd(data.households);
+    if (data.meters) await db.meters.bulkAdd(data.meters);
+    if (data.devices) await db.devices.bulkAdd(data.devices);
+    if (data.readings) await db.readings.bulkAdd(data.readings);
+    if (data.settings) await db.settings.bulkAdd(data.settings);
+  }
+
+  toast('Import hotový');
+  await loadActiveHousehold();
+  await refresh();
+  renderHouseholdSwitcher();
+}
+
+async function resetAll() {
+  if (!confirm('Naozaj vymazať VŠETKY dáta? Nedá sa vrátiť späť.')) return;
+  await db.households.clear();
+  await db.meters.clear();
+  await db.devices.clear();
+  await db.readings.clear();
+  await db.settings.clear();
+  await seedIfEmpty();
+  await loadActiveHousehold();
+  toast('Reset hotový — obnovené východiskové dáta');
+  await refresh();
+  renderHouseholdSwitcher();
+}
+
+/* =============================================================
+   TOAST
+   ============================================================= */
+
+function toast(msg, isError = false) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
+
+/* =============================================================
+   OCR — Tesseract.js s ROI výberom a predspracovaním
+   ============================================================= */
+
+const OCR = {
+  imgEl: null,
+  wrap: null,
+  roi: null,
+  natural: null,    // natural dimensions
+  display: null,    // displayed dimensions
+  selecting: false,
+  startX: 0, startY: 0,
+  curRect: null     // {x, y, w, h} v zobrazovacích px
+};
+
+function ocrReset() {
+  document.getElementById('ocrStage').classList.add('hidden');
+  document.getElementById('ocrRoi').classList.add('hidden');
+  document.getElementById('ocrRun').disabled = true;
+  document.getElementById('ocrStatusText').textContent = 'Označ číslice na fotke';
+  document.getElementById('ocrProgressWrap').classList.add('hidden');
+  document.getElementById('ocrProgressBar').style.width = '0%';
+  if (OCR.imgEl) OCR.imgEl.src = '';
+  OCR.curRect = null;
+}
+
+function ocrLoadFile(file) {
+  const url = URL.createObjectURL(file);
+  const stage = document.getElementById('ocrStage');
+  stage.classList.remove('hidden');
+  OCR.imgEl = document.getElementById('ocrImage');
+  OCR.wrap = document.getElementById('ocrCanvasWrap');
+  OCR.roi = document.getElementById('ocrRoi');
+  OCR.imgEl.onload = () => {
+    OCR.natural = { w: OCR.imgEl.naturalWidth, h: OCR.imgEl.naturalHeight };
+    OCR.display = { w: OCR.imgEl.clientWidth, h: OCR.imgEl.clientHeight };
+    OCR.roi.classList.add('hidden');
+    OCR.curRect = null;
+    document.getElementById('ocrRun').disabled = true;
+    document.getElementById('ocrStatusText').textContent = 'Potiahni cez číslice';
+  };
+  OCR.imgEl.src = url;
+}
+
+function ocrPointerStart(e) {
+  if (!OCR.imgEl || !OCR.imgEl.complete) return;
+  e.preventDefault();
+  const rect = OCR.wrap.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  OCR.startX = t.clientX - rect.left;
+  OCR.startY = t.clientY - rect.top;
+  OCR.selecting = true;
+  OCR.display = { w: OCR.imgEl.clientWidth, h: OCR.imgEl.clientHeight };
+  OCR.roi.classList.remove('hidden');
+  OCR.roi.style.left = OCR.startX + 'px';
+  OCR.roi.style.top = OCR.startY + 'px';
+  OCR.roi.style.width = '0px';
+  OCR.roi.style.height = '0px';
+}
+
+function ocrPointerMove(e) {
+  if (!OCR.selecting) return;
+  e.preventDefault();
+  const rect = OCR.wrap.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  const x = Math.max(0, Math.min(t.clientX - rect.left, OCR.display.w));
+  const y = Math.max(0, Math.min(t.clientY - rect.top, OCR.display.h));
+  const left = Math.min(OCR.startX, x);
+  const top = Math.min(OCR.startY, y);
+  const w = Math.abs(x - OCR.startX);
+  const h = Math.abs(y - OCR.startY);
+  OCR.roi.style.left = left + 'px';
+  OCR.roi.style.top = top + 'px';
+  OCR.roi.style.width = w + 'px';
+  OCR.roi.style.height = h + 'px';
+  OCR.curRect = { x: left, y: top, w, h };
+}
+
+function ocrPointerEnd() {
+  if (!OCR.selecting) return;
+  OCR.selecting = false;
+  if (OCR.curRect && OCR.curRect.w > 20 && OCR.curRect.h > 12) {
+    document.getElementById('ocrRun').disabled = false;
+    document.getElementById('ocrStatusText').textContent = 'Pripravené – klikni Prečítať hodnotu';
+  } else {
+    OCR.roi.classList.add('hidden');
+    OCR.curRect = null;
+    document.getElementById('ocrRun').disabled = true;
+    document.getElementById('ocrStatusText').textContent = 'Výber je príliš malý — skús znova';
+  }
+}
+
+// Predspracovanie - vyextrahuj ROI, zväčši, prahuj na ČB pre lepšiu OCR presnosť.
+function ocrPreprocess() {
+  const r = OCR.curRect;
+  const sx = r.x / OCR.display.w * OCR.natural.w;
+  const sy = r.y / OCR.display.h * OCR.natural.h;
+  const sw = r.w / OCR.display.w * OCR.natural.w;
+  const sh = r.h / OCR.display.h * OCR.natural.h;
+
+  // upscale na min šírku 600px pre lepšie OCR
+  const targetW = Math.max(600, sw);
+  const scale = targetW / sw;
+  const tw = Math.round(sw * scale);
+  const th = Math.round(sh * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = tw;
+  canvas.height = th;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(OCR.imgEl, sx, sy, sw, sh, 0, 0, tw, th);
+
+  // grayscale + zvýšenie kontrastu + adaptívne prahovanie (Otsu approx)
+  const img = ctx.getImageData(0, 0, tw, th);
+  const d = img.data;
+  // 1. grayscale + histogram
+  const gray = new Uint8Array(tw * th);
+  const hist = new Array(256).fill(0);
+  for (let i = 0; i < tw * th; i++) {
+    const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2];
+    const v = (r * 0.299 + g * 0.587 + b * 0.114) | 0;
+    gray[i] = v;
+    hist[v]++;
+  }
+  // 2. Otsu threshold
+  const total = tw * th;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, varMax = 0, threshold = 127;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > varMax) { varMax = v; threshold = t; }
+  }
+  // 3. binarizácia – test na "biele číslice na tmavom" aj inverzia
+  // Heuristika: ak je menšina bielych pixlov než čiernych, sú číslice nad pozadím tmavé → priamo prahovať.
+  let above = 0;
+  for (let i = 0; i < gray.length; i++) if (gray[i] > threshold) above++;
+  const invert = above > total / 2; // ak väčšina pixlov je svetlá, číslice sú tmavé → ponecháme; invertujeme len ak väčšina je tmavá (číslice biele)
+  for (let i = 0; i < gray.length; i++) {
+    let v = gray[i] > threshold ? 255 : 0;
+    if (invert) v = 255 - v;
+    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+    d[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
+async function ocrRun() {
+  if (!OCR.curRect) return;
+  document.getElementById('ocrRun').disabled = true;
+  const statusEl = document.getElementById('ocrStatusText');
+  const progEl = document.getElementById('ocrProgressBar');
+  const progWrap = document.getElementById('ocrProgressWrap');
+  progWrap.classList.remove('hidden');
+  statusEl.textContent = 'Načítavam OCR engine...';
+
+  try {
+    const canvas = ocrPreprocess();
+    const result = await Tesseract.recognize(canvas, 'eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          progEl.style.width = (m.progress * 100) + '%';
+          statusEl.textContent = 'Rozpoznávam číslice... ' + Math.round(m.progress * 100) + '%';
+        } else if (m.status === 'loading tesseract core' || m.status === 'initializing tesseract') {
+          statusEl.textContent = 'Pripravujem OCR engine...';
+        } else if (m.status === 'loading language traineddata') {
+          statusEl.textContent = 'Sťahujem jazykové dáta...';
+        }
+      },
+      tessedit_char_whitelist: '0123456789',
+      tessedit_pageseg_mode: '7' // jeden riadok textu
+    });
+    const raw = (result.data.text || '').replace(/[^0-9]/g, '');
+    progEl.style.width = '100%';
+    if (raw.length === 0) {
+      statusEl.textContent = '⚠ Nič sa nepodarilo prečítať. Skús inú výseč.';
+      document.getElementById('ocrRun').disabled = false;
+      return;
+    }
+    statusEl.textContent = `Prečítané: ${raw} (${Math.round(result.data.confidence)}% istota)`;
+    document.getElementById('addValue').value = raw;
+    updateAddHint();
+    document.getElementById('ocrRun').disabled = false;
+  } catch (e) {
+    statusEl.textContent = '⚠ Chyba OCR: ' + e.message;
+    document.getElementById('ocrRun').disabled = false;
+  }
+}
+
+/* =============================================================
+   HEATMAPA
+   ============================================================= */
+
+async function renderHeatmap() {
+  const sel = document.getElementById('heatmapMeter');
+  // pri prepnut domu naplň selector dynamicky
+  if (sel.dataset.hh !== String(State.activeHouseholdId)) {
+    sel.innerHTML = '';
+    for (const m of State.meters) {
+      const opt = document.createElement('option');
+      opt.value = m.pk;
+      opt.textContent = m.name;
+      sel.appendChild(opt);
+    }
+    sel.dataset.hh = String(State.activeHouseholdId);
+  }
+  const meterPk = parseInt(sel.value);
+  if (isNaN(meterPk)) { document.getElementById('heatmapBody').innerHTML = '<div class="anomaly-empty">Žiadne meradlo</div>'; return; }
+  const def = meterDef(meterPk);
+  const monthly = await monthlyConsumption(meterPk);
+  const body = document.getElementById('heatmapBody');
+
+  const years = [...new Set(Object.keys(monthly).map(k => k.split('-')[0]))].sort();
+  if (years.length === 0) { body.innerHTML = '<div class="anomaly-empty">Žiadne dáta</div>'; return; }
+
+  const max = Math.max(...Object.values(monthly), 1);
+
+  const months = ['Jan','Feb','Mar','Apr','Máj','Jún','Júl','Aug','Sep','Okt','Nov','Dec'];
+  const html = ['<div class="heatmap">'];
+  html.push('<div class="heatmap-label"></div>');
+  for (const m of months) html.push(`<div class="heatmap-label">${m}</div>`);
+
+  const baseColor = def.color;
+
+  for (const y of years) {
+    html.push(`<div class="heatmap-label">${y}</div>`);
+    for (let m = 1; m <= 12; m++) {
+      const ym = y + '-' + String(m).padStart(2, '0');
+      const v = monthly[ym];
+      if (v == null) {
+        html.push('<div class="heatmap-cell empty" title="' + ym + ' — bez dát"></div>');
+      } else {
+        const intensity = Math.min(1, Math.max(0.05, v / max));
+        const display = v < 1 ? '·' : Math.round(v);
+        html.push(`<div class="heatmap-cell" style="background: ${baseColor}; opacity: ${0.15 + intensity * 0.85}" title="${ym}: ${fmtNum(v, 0)} ${def.unit}">${display}</div>`);
+      }
+    }
+  }
+  html.push('</div>');
+
+  html.push(`<div class="heatmap-legend">
+    <span>menej</span>
+    <div class="heatmap-legend-cell" style="background: ${baseColor}; opacity: 0.2"></div>
+    <div class="heatmap-legend-cell" style="background: ${baseColor}; opacity: 0.4"></div>
+    <div class="heatmap-legend-cell" style="background: ${baseColor}; opacity: 0.6"></div>
+    <div class="heatmap-legend-cell" style="background: ${baseColor}; opacity: 0.8"></div>
+    <div class="heatmap-legend-cell" style="background: ${baseColor}; opacity: 1.0"></div>
+    <span>viac</span>
+    <span style="margin-left: auto">jednotka: ${def.unit}</span>
+  </div>`);
+
+  body.innerHTML = html.join('');
+}
+
+/* =============================================================
+   COSTS / TARIFFS
+   ============================================================= */
+
+async function getTariffs() {
+  const t = await db.settings.get('tariffs');
+  return t ? t.values : {};
+}
+
+function fmtCost(amount) {
+  if (amount == null || isNaN(amount)) return null;
+  return new Intl.NumberFormat('sk-SK', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }).format(amount);
+}
+
+async function renderTariffSettings() {
+  const grid = document.getElementById('tariffGrid');
+  const tariffs = await getTariffs();
+  grid.innerHTML = '';
+  for (const m of State.meters) {
+    const cell = document.createElement('div');
+    cell.className = 'field';
+    cell.style.margin = '0';
+    const v = tariffs[m.type];
+    cell.innerHTML = `
+      <label>${m.name} (€/${m.unit})</label>
+      <input type="number" step="0.0001" id="tariff_${m.type}" value="${v != null ? v : ''}" placeholder="napr. 0.18">
+    `;
+    grid.appendChild(cell);
+  }
+}
+
+async function saveTariffs() {
+  const values = {};
+  for (const m of State.meters) {
+    const input = document.getElementById('tariff_' + m.type);
+    if (!input) continue;
+    const v = parseFloat(input.value);
+    values[m.type] = isNaN(v) ? null : v;
+  }
+  await db.settings.put({ key: 'tariffs', values });
+  toast('Tarify uložené');
+  await refresh();
+  schedulePush();
+}
+
+async function renderDashboardCosts() {
+  const tariffs = await getTariffs();
+  const cards = document.querySelectorAll('.meter-card');
+  cards.forEach(async card => {
+    const type = card.dataset.type;
+    const tariff = tariffs[type];
+    if (tariff == null) return;
+    const m = meterByType(type);
+    if (!m) return;
+    const monthly = await monthlyConsumption(m.pk);
+    const now = new Date();
+    const curYM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const curMonth = monthly[curYM] || 0;
+    const cost = curMonth * tariff;
+    if (!card.querySelector('.cost')) {
+      const meta = card.querySelector('.meter-meta');
+      const c = document.createElement('div');
+      c.className = 'cost';
+      c.innerHTML = `≈ <strong>${fmtCost(cost)}</strong> tento mesiac`;
+      meta.parentNode.insertBefore(c, meta);
+    }
+  });
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('section[id^="tab-"]').forEach(s => {
+    s.classList.toggle('hidden', s.id !== 'tab-' + tab);
+  });
+  if (tab === 'history') renderHistory();
+  if (tab === 'charts') renderChart();
+  if (tab === 'heatmap') renderHeatmap();
+  if (tab === 'anomalies') renderAnomalies();
+  if (tab === 'settings') { loadSettings(); renderHouseholdsList(); }
+}
+
+async function loadSettings() {
+  const s = await db.settings.get('thresholds') || { warn: 25, severe: 50 };
+  document.getElementById('thresholdWarn').value = s.warn;
+  document.getElementById('thresholdSevere').value = s.severe;
+  await renderTariffSettings();
+}
+
+async function refresh() {
+  const active = document.querySelector('.tab.active').dataset.tab;
+  if (active === 'dashboard') { await renderDashboard(); await renderDashboardCosts(); }
+  if (active === 'history') await renderHistory();
+  if (active === 'charts') await renderChart();
+  if (active === 'heatmap') await renderHeatmap();
+  if (active === 'anomalies') await renderAnomalies();
+  if (active === 'settings') await renderHouseholdsList();
+}
+
+/* =============================================================
+   HOUSEHOLD SWITCHER + MGMT
+   ============================================================= */
+
+async function renderHouseholdSwitcher() {
+  const nameEl = document.getElementById('hhButtonName');
+  const dropdown = document.getElementById('hhDropdown');
+  if (!State.household) {
+    nameEl.textContent = 'Žiadny dom';
+  } else {
+    nameEl.textContent = State.household.name;
+  }
+
+  const all = await db.households.toArray();
+  dropdown.innerHTML = '';
+  for (const h of all) {
+    const item = document.createElement('div');
+    item.className = 'hh-item' + (h.id === State.activeHouseholdId ? ' active' : '');
+    item.innerHTML = `
+      <div class="hh-item-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${h.name}</div>
+      ${h.address ? `<div class="hh-item-addr">${h.address}</div>` : ''}
+    `;
+    item.addEventListener('click', async () => {
+      await switchHousehold(h.id);
+      dropdown.classList.add('hidden');
+    });
+    dropdown.appendChild(item);
+  }
+
+  const div = document.createElement('div');
+  div.className = 'hh-divider';
+  dropdown.appendChild(div);
+
+  const addBtn = document.createElement('div');
+  addBtn.className = 'hh-item';
+  addBtn.innerHTML = `<div class="hh-item-name hh-add">+ Pridať dom</div>`;
+  addBtn.addEventListener('click', () => {
+    dropdown.classList.add('hidden');
+    openWizard();
+  });
+  dropdown.appendChild(addBtn);
+}
+
+async function switchHousehold(hhId) {
+  await db.settings.put({ key: 'activeHousehold', value: hhId });
+  await loadActiveHousehold();
+  // reset selectory aby sa znovu populated
+  const cs = document.getElementById('chartMeter');
+  if (cs) cs.dataset.hh = '';
+  const hs = document.getElementById('heatmapMeter');
+  if (hs) hs.dataset.hh = '';
+  await refresh();
+  await renderHouseholdSwitcher();
+  toast('Aktívny dom: ' + State.household.name);
+  schedulePush();
+}
+
+let wizardEditingId = null;
+
+function openWizard() {
+  document.getElementById('wizardModal').classList.remove('hidden');
+  document.getElementById('wizardTitle').textContent = 'Pridať nový dom';
+  document.getElementById('wizardSub').textContent = 'Pomenuj dom a vyber meradlá, ktoré budeš sledovať.';
+  document.getElementById('wizName').value = '';
+  document.getElementById('wizAddress').value = '';
+
+  const grid = document.getElementById('wizMeterGrid');
+  grid.innerHTML = '';
+  const defaults = ['electricity_in', 'water', 'gas']; // default: bez FV
+  for (const t of METER_DEFS_TEMPLATE) {
+    const id = 'wiz_' + t.type;
+    const checked = defaults.includes(t.type);
+    const wrap = document.createElement('label');
+    wrap.className = 'meter-check' + (checked ? ' checked' : '');
+    wrap.innerHTML = `
+      <input type="checkbox" id="${id}" ${checked ? 'checked' : ''}>
+      <div class="mc-info">
+        <span class="mc-name">${t.name}</span>
+        <span class="mc-unit">${t.unit}</span>
+      </div>
+    `;
+    grid.appendChild(wrap);
+    const input = wrap.querySelector('input');
+    input.addEventListener('change', () => {
+      wrap.classList.toggle('checked', input.checked);
+    });
+  }
+}
+
+async function saveWizard() {
+  const name = document.getElementById('wizName').value.trim();
+  const address = document.getElementById('wizAddress').value.trim();
+  if (!name) { toast('Názov domu je povinný', true); return; }
+
+  const enabledTypes = METER_DEFS_TEMPLATE
+    .filter(t => document.getElementById('wiz_' + t.type).checked)
+    .map(t => t.type);
+
+  if (enabledTypes.length === 0) { toast('Vyber aspoň jedno meradlo', true); return; }
+
+  const hhId = await db.households.add({
+    name, address, enabledMeters: enabledTypes, createdAt: new Date().toISOString()
+  });
+
+  for (const type of enabledTypes) {
+    const tmpl = METER_DEFS_TEMPLATE.find(t => t.type === type);
+    await db.meters.add({
+      householdId: hhId, type, name: tmpl.name, unit: tmpl.unit
+    });
+  }
+
+  document.getElementById('wizardModal').classList.add('hidden');
+  toast('Dom "' + name + '" vytvorený');
+
+  await switchHousehold(hhId);
+  schedulePush();
+}
+
+async function renderHouseholdsList() {
+  const list = document.getElementById('householdsList');
+  if (!list) return;
+  const all = await db.households.toArray();
+  list.innerHTML = '';
+  for (const h of all) {
+    const meters = await db.meters.where('householdId').equals(h.id).toArray();
+    const readingCount = await db.readings.where('householdId').equals(h.id).count();
+    const item = document.createElement('div');
+    item.className = 'hh-list-item';
+    item.innerHTML = `
+      <div class="hh-li-info">
+        <span class="hh-li-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${h.name}</span>
+        <span class="hh-li-meta">${h.address || 'bez adresy'} · ${meters.length} meradiel · ${readingCount} odpočtov</span>
+      </div>
+      <div class="hh-li-actions">
+        ${h.id !== State.activeHouseholdId ? `<button class="row-btn" data-action="switch" data-id="${h.id}" title="Aktivovať">→</button>` : ''}
+        <button class="row-btn" data-action="rename" data-id="${h.id}" title="Premenovať">✎</button>
+        <button class="row-btn danger" data-action="delete" data-id="${h.id}" title="Zmazať">×</button>
+      </div>
+    `;
+    list.appendChild(item);
+  }
+
+  list.querySelectorAll('button[data-action="switch"]').forEach(b => {
+    b.addEventListener('click', async () => switchHousehold(parseInt(b.dataset.id)));
+  });
+  list.querySelectorAll('button[data-action="rename"]').forEach(b => {
+    b.addEventListener('click', async () => openHouseholdEdit(parseInt(b.dataset.id)));
+  });
+  list.querySelectorAll('button[data-action="delete"]').forEach(b => {
+    b.addEventListener('click', async () => deleteHousehold(parseInt(b.dataset.id)));
+  });
+}
+
+let editingHouseholdId = null;
+async function openHouseholdEdit(id) {
+  const h = await db.households.get(id);
+  if (!h) return;
+  editingHouseholdId = id;
+  document.getElementById('hhEditName').value = h.name;
+  document.getElementById('hhEditAddress').value = h.address || '';
+  document.getElementById('hhEditModal').classList.remove('hidden');
+}
+
+async function saveHouseholdEdit() {
+  if (editingHouseholdId == null) return;
+  const name = document.getElementById('hhEditName').value.trim();
+  const address = document.getElementById('hhEditAddress').value.trim();
+  if (!name) { toast('Názov je povinný', true); return; }
+  await db.households.update(editingHouseholdId, { name, address });
+  document.getElementById('hhEditModal').classList.add('hidden');
+  editingHouseholdId = null;
+  if (State.activeHouseholdId) await loadActiveHousehold();
+  toast('Uložené');
+  await renderHouseholdsList();
+  await renderHouseholdSwitcher();
+  schedulePush();
+}
+
+async function deleteHousehold(id) {
+  const all = await db.households.toArray();
+  if (all.length === 1) { toast('Nemôžeš zmazať jediný dom', true); return; }
+  const h = await db.households.get(id);
+  if (!confirm(`Naozaj zmazať dom "${h.name}" so všetkými dátami? Nedá sa vrátiť späť.`)) return;
+
+  // cloud delete (cascade)
+  await cloudDeleteHousehold(id);
+
+  // local delete
+  await db.readings.where('householdId').equals(id).delete();
+  await db.devices.where('householdId').equals(id).delete();
+  await db.meters.where('householdId').equals(id).delete();
+  await db.households.delete(id);
+
+  if (State.activeHouseholdId === id) {
+    const remaining = await db.households.toArray();
+    await switchHousehold(remaining[0].id);
+  } else {
+    await renderHouseholdsList();
+    await renderHouseholdSwitcher();
+  }
+  toast('Dom zmazaný');
+}
+
+// Household switcher
+document.getElementById('hhButton').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const dd = document.getElementById('hhDropdown');
+  dd.classList.toggle('hidden');
+});
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('hhDropdown');
+  if (!dd.classList.contains('hidden') && !e.target.closest('.household-switcher')) {
+    dd.classList.add('hidden');
+  }
+});
+document.getElementById('btnAddHousehold').addEventListener('click', openWizard);
+document.getElementById('btnWizCancel').addEventListener('click', () => {
+  document.getElementById('wizardModal').classList.add('hidden');
+});
+document.getElementById('btnWizSave').addEventListener('click', saveWizard);
+document.getElementById('btnHhEditCancel').addEventListener('click', () => {
+  document.getElementById('hhEditModal').classList.add('hidden');
+  editingHouseholdId = null;
+});
+document.getElementById('btnHhEditSave').addEventListener('click', saveHouseholdEdit);
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => switchTab(t.dataset.tab));
+});
+document.getElementById('btnAddTop').addEventListener('click', () => openAddModal());
+document.getElementById('btnCancel').addEventListener('click', () => { document.getElementById('addModal').classList.add('hidden'); ocrReset(); });
+document.getElementById('btnSave').addEventListener('click', saveReading);
+document.getElementById('btnDevCancel').addEventListener('click', () => document.getElementById('deviceModal').classList.add('hidden'));
+document.getElementById('btnDevSave').addEventListener('click', saveDevice);
+document.getElementById('btnReplaceDevice').addEventListener('click', openDeviceModal);
+document.getElementById('btnExport').addEventListener('click', exportData);
+document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
+document.getElementById('fileImport').addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
+document.getElementById('btnReset').addEventListener('click', resetAll);
+document.getElementById('chartMeter').addEventListener('change', renderChart);
+document.getElementById('chartView').addEventListener('change', renderChart);
+document.getElementById('heatmapMeter').addEventListener('change', renderHeatmap);
+document.getElementById('btnSaveSettings').addEventListener('click', async () => {
+  const warn = parseInt(document.getElementById('thresholdWarn').value);
+  const severe = parseInt(document.getElementById('thresholdSevere').value);
+  await db.settings.put({ key: 'thresholds', warn, severe });
+  toast('Nastavenia uložené');
+  schedulePush();
+});
+document.getElementById('btnSaveTariffs').addEventListener('click', saveTariffs);
+document.getElementById('btnLogout').addEventListener('click', async () => {
+  if (!confirm('Odhlásiť sa? Lokálna DB zostane, ale po prihlásení sa znova natiahne z cloudu.')) return;
+  await signOut();
+});
+document.getElementById('btnFullSync').addEventListener('click', async () => {
+  try {
+    setSyncStatus('syncing');
+    await pullFromCloud();
+    await pushAll();
+    await loadActiveHousehold();
+    await renderHouseholdSwitcher();
+    await refresh();
+    toast('Plná synchronizácia dokončená');
+  } catch (e) {
+    toast('Sync zlyhal: ' + e.message, true);
+  }
+});
+
+// History toolbar
+document.getElementById('historySearch').addEventListener('input', (e) => {
+  historyState.search = e.target.value.trim();
+  renderHistory();
+});
+document.getElementById('historyDateFilter').addEventListener('change', (e) => {
+  historyState.dateFilter = e.target.value;
+  renderHistory();
+});
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.sort;
+    if (historyState.sortBy === col) {
+      historyState.sortDir = historyState.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      historyState.sortBy = col;
+      historyState.sortDir = col === 'date' ? 'desc' : 'asc';
+    }
+    renderHistory();
+  });
+});
+
+// Edit modal
+document.getElementById('btnEditCancel').addEventListener('click', () => {
+  document.getElementById('editModal').classList.add('hidden');
+  editingId = null;
+});
+document.getElementById('btnEditSave').addEventListener('click', saveEdit);
+document.getElementById('editDate').addEventListener('change', updateEditHint);
+document.getElementById('editValue').addEventListener('input', updateEditHint);
+
+// OCR handlers
+document.getElementById('ocrCamera').addEventListener('click', () => document.getElementById('ocrFileCamera').click());
+document.getElementById('ocrUpload').addEventListener('click', () => document.getElementById('ocrFile').click());
+document.getElementById('ocrFileCamera').addEventListener('change', e => { if (e.target.files[0]) ocrLoadFile(e.target.files[0]); e.target.value = ''; });
+document.getElementById('ocrFile').addEventListener('change', e => { if (e.target.files[0]) ocrLoadFile(e.target.files[0]); e.target.value = ''; });
+document.getElementById('ocrClear').addEventListener('click', ocrReset);
+document.getElementById('ocrRun').addEventListener('click', ocrRun);
+const ocrWrap = document.getElementById('ocrCanvasWrap');
+ocrWrap.addEventListener('mousedown', ocrPointerStart);
+ocrWrap.addEventListener('mousemove', ocrPointerMove);
+window.addEventListener('mouseup', ocrPointerEnd);
+ocrWrap.addEventListener('touchstart', ocrPointerStart, { passive: false });
+ocrWrap.addEventListener('touchmove', ocrPointerMove, { passive: false });
+ocrWrap.addEventListener('touchend', ocrPointerEnd);
+
+/* =============================================================
+   INIT
+   ============================================================= */
+
+async function startApp() {
+  // 1) Migrácia zo starej DB ak treba
+  const migrated = await migrateFromOldDbIfNeeded();
+
+  // 2) Načítaj sync mapy
+  await loadSyncMaps();
+
+  // 3) Pull dáta z cloudu (ak je už niečo nahrané)
+  let cloudHasData = false;
+  try {
+    const { count, error } = await sb.from('households').select('*', { count: 'exact', head: true });
+    if (error) throw error;
+    cloudHasData = (count || 0) > 0;
+  } catch (e) {
+    console.warn('Skontrolovanie cloudu zlyhalo:', e.message);
+    setSyncStatus('error', e.message);
+  }
+
+  if (cloudHasData) {
+    // Cloud má dáta - stiahni ich. Mali by sa zlúčiť s lokálnymi cez sync mapy.
+    // Ak sync mapy sú prázdne (prvé prihlásenie z iného zariadenia), stiahnu sa všetky cloud dáta naraz.
+    try {
+      await pullFromCloud();
+    } catch(e) { /* status nastavený */ }
+  } else {
+    // Cloud je prázdny - nahrajme tam lokálne dáta (alebo seed ak nič neexistuje)
+    if (!migrated) {
+      await seedIfEmpty();
+      await seedParentsHouseIfMissing();
+    }
+    try {
+      await pushAll();
+    } catch(e) { /* status nastavený */ }
+  }
+
+  // 4) Načítaj aktívny dom
+  await loadActiveHousehold();
+  if (!State.activeHouseholdId) {
+    const all = await db.households.toArray();
+    if (all.length > 0) {
+      await db.settings.put({ key: 'activeHousehold', value: all[0].id });
+      await loadActiveHousehold();
+    }
+  }
+
+  // 5) Vyrenderuj UI
+  hideAuthScreen();
+  await renderHouseholdSwitcher();
+  await renderDashboard();
+  await renderDashboardCosts();
+
+  // 6) User info v nastaveniach
+  const ui = document.getElementById('userInfo');
+  if (ui) ui.textContent = '✓ Prihlásený ako ' + Sync.user.email;
+}
+
+(async function init() {
+  setupAuthUI();
+
+  try {
+    await db.open();
+
+    // Auth state listener - reaguje na sign in / sign out / token refresh
+    sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (session && session.user) {
+          Sync.user = session.user;
+          await startApp();
+        } else {
+          showAuthScreen();
+        }
+      } else if (event === 'SIGNED_OUT') {
+        Sync.user = null;
+        // Reload aby sa appka resetla a auth screen ukázal
+        location.reload();
+      } else if (event === 'TOKEN_REFRESHED') {
+        if (session) Sync.user = session.user;
+      }
+    });
+
+    // Skontroluj aktuálny session (pre prípad že onAuthStateChange neodpalí INITIAL_SESSION včas)
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      showAuthScreen();
+    }
+
+  } catch (err) {
+    console.error('Init failed:', err);
+    document.body.innerHTML = `
+      <div style="max-width: 600px; margin: 80px auto; padding: 32px; font-family: Inter, sans-serif; color: #f4ede4; background: #15171a; border: 1px solid #2a2e34; border-radius: 12px;">
+        <h2 style="font-family: Fraunces, serif; font-weight: 400; font-size: 28px; margin-bottom: 12px;">Niečo sa pokazilo</h2>
+        <p style="margin-bottom: 12px; color: #b8b3a9;">Inicializácia appky zlyhala.</p>
+        <p style="margin-bottom: 20px; padding: 12px; background: #0e0f10; border-radius: 6px; font-family: monospace; font-size: 13px; color: #ff5d5d;">${err.message}</p>
+        <button id="btnHardReset" style="margin-top: 24px; background: #ff5d5d; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; font-family: inherit;">Tvrdý reset (zmaže obe lokálne DB)</button>
+      </div>
+    `;
+    document.getElementById('btnHardReset').addEventListener('click', async () => {
+      if (!confirm('Naozaj zmazať obe lokálne DB? Cloud dáta zostanú.')) return;
+      try {
+        await Dexie.delete('spotrebaDB');
+        await Dexie.delete('spotrebaDB_v2');
+        location.reload();
+      } catch(e) {
+        alert('Reset zlyhal: ' + e.message);
+      }
+    });
+  }
+})();
+</script>
+</body>
+</html>
