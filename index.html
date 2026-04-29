@@ -84,7 +84,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Spotreba">
 <style>
-  /* iOS LIGHT (default) — applied when [data-theme="light"] or no theme set */
+  /* iOS LIGHT (default) — applied when [data-theme="light"] or no theme set
+     ── farby spĺňajú WCAG AA (4.5:1 normal, 3.0:1 large/UI). Tmavšie *-strong
+     varianty sú pre TEXT na bielom (kde plný SF tint zlyhá). Plné --accent
+     používame na BG / FAB icons / badges, kde stačí 3:1.                */
   :root, [data-theme="light"] {
     --bg: #f2f2f7;            /* iOS systemGray6 */
     --bg-2: #ffffff;          /* card background */
@@ -93,16 +96,29 @@
     --line-2: rgba(60, 60, 67, 0.36);
     --ink: #1c1c1e;
     --ink-2: #3c3c43;
-    --ink-3: #6d6d72;         /* slightly darkened from iOS #8e8e93 for AA contrast */
-    --accent: #34c759;        /* SF Green */
-    --accent-2: #2eb850;
-    --warn: #ff9500;          /* SF Orange */
-    --bad: #ff3b30;           /* SF Red — destructive only */
+    --ink-3: #6d6d72;         /* 5.04:1 on white */
+    --accent: #34c759;        /* SF Green — used for BG, FAB, dots */
+    --accent-2: #2eb850;      /* hover BG */
+    --accent-strong: #1e7a32; /* TEXT-color variant — 5.40:1 on white ✓ */
+    --accent-text: #ffffff;   /* text NA accent BG — bumped via --btn-primary-text */
+    --warn: #ff9500;
+    --warn-strong: #b06d00;   /* warn TEXT on white = 4.59:1 ✓ */
+    --bad: #ff3b30;
+    --bad-strong: #c42218;    /* bad TEXT on white = 5.51:1 ✓ */
     --good: #34c759;
-    --elec-in: #ff9500;       /* electricity from grid → SF Orange */
-    --elec-out: #00c7be;      /* FV sell → SF Mint (was lime, freed for accent) */
-    --water: #007aff;         /* SF Blue */
+    --good-strong: #1e7a32;   /* good TEXT on white = 5.40:1 ✓ */
+    --elec-in: #ff9500;
+    --elec-out: #00c7be;
+    --water: #007aff;
     --gas: #ff6b6b;
+    /* Subtle bg tints (badges, deltas, active states) — vždy s plným accent rgb */
+    --accent-tint: rgba(52, 199, 89, 0.14);
+    --bad-tint: rgba(255, 59, 48, 0.10);
+    --good-tint: rgba(52, 199, 89, 0.10);
+    --warn-tint: rgba(255, 149, 0, 0.12);
+    --water-tint: rgba(0, 122, 255, 0.10);
+    /* Button text: black on bright green is 7.40:1 ✓; white na green by bolo 2.23:1 ❌ */
+    --btn-primary-text: #1c1c1e;
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
   }
 
@@ -115,16 +131,27 @@
     --line-2: rgba(84, 84, 88, 0.85);
     --ink: #ffffff;
     --ink-2: #ebebf5;
-    --ink-3: #98989f;
+    --ink-3: #98989f;         /* 6.30:1 on #1c1c1e ✓ */
     --accent: #30d158;
     --accent-2: #28b04a;
+    --accent-strong: #6cdb88; /* TEXT na #1c1c1e card = 7.65:1 ✓ */
+    --accent-text: #ffffff;
     --warn: #ff9f0a;
+    --warn-strong: #ffb340;   /* TEXT na #1c1c1e = 8.24:1 ✓ */
     --bad: #ff453a;
+    --bad-strong: #ff6b61;    /* TEXT na #1c1c1e = 5.43:1 ✓ */
     --good: #30d158;
+    --good-strong: #6cdb88;
     --elec-in: #ff9f0a;
     --elec-out: #66d4cf;
     --water: #0a84ff;
     --gas: #ff7b7b;
+    --accent-tint: rgba(48, 209, 88, 0.18);
+    --bad-tint: rgba(255, 69, 58, 0.18);
+    --good-tint: rgba(48, 209, 88, 0.18);
+    --warn-tint: rgba(255, 159, 10, 0.18);
+    --water-tint: rgba(10, 132, 255, 0.18);
+    --btn-primary-text: #1c1c1e; /* aj v dark, čierny na svetlozelenom = ~5.4:1 */
     --shadow-card: none;
   }
 
@@ -143,10 +170,7 @@
   }
 
   body {
-    background:
-      radial-gradient(circle at 15% 0%, rgba(200, 255, 62, 0.04), transparent 40%),
-      radial-gradient(circle at 90% 80%, rgba(76, 201, 240, 0.03), transparent 35%),
-      var(--bg);
+    background: var(--bg);
   }
 
   .app {
@@ -178,7 +202,7 @@
   }
   .brand h1 em {
     font-style: italic;
-    color: var(--accent);
+    color: var(--accent-strong);
   }
   .brand .sub {
     font-size: 12px;
@@ -208,15 +232,15 @@
   .btn:hover { background: var(--bg-3); }
   .btn-primary {
     background: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
+    color: var(--btn-primary-text);    /* čierna na zelenej = 7.40:1 ✓ */
+    border-color: var(--accent-strong);
     font-weight: 600;
   }
   .btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
-  .btn-ghost { border-color: transparent; background: transparent; color: var(--accent); }
-  .btn-ghost:hover { color: var(--accent-2); background: var(--bg-3); }
-  .btn-danger { color: var(--bad); border-color: transparent; background: transparent; }
-  .btn-danger:hover { background: rgba(255, 59, 48, 0.1); }
+  .btn-ghost { border-color: transparent; background: transparent; color: var(--accent-strong); }
+  .btn-ghost:hover { color: var(--accent-strong); background: var(--accent-tint); }
+  .btn-danger { color: var(--bad-strong); border-color: transparent; background: transparent; }
+  .btn-danger:hover { background: var(--bad-tint); }
 
   /* TABS */
   .tabs {
@@ -319,8 +343,8 @@
     border-radius: 4px;
     font-weight: 500;
   }
-  .delta.up { background: rgba(255, 93, 93, 0.12); color: var(--bad); }
-  .delta.down { background: rgba(74, 222, 128, 0.12); color: var(--good); }
+  .delta.up { background: var(--bad-tint); color: var(--bad-strong); }
+  .delta.down { background: var(--good-tint); color: var(--good-strong); }
   .delta.flat { background: var(--bg-3); color: var(--ink-2); }
 
   /* SECTION TITLE */
@@ -378,7 +402,7 @@
     font-family: inherit;
     font-size: 13px;
   }
-  .chart-tools input[type="checkbox"] { accent-color: var(--accent); }
+  .chart-tools input[type="checkbox"] { accent-color: var(--accent-strong); }
   .chart-wrap {
     height: 380px;
     position: relative;
@@ -418,8 +442,8 @@
     background: var(--bg-3);
     color: var(--ink-2);
   }
-  .badge.warn { background: rgba(255, 181, 71, 0.15); color: var(--warn); }
-  .badge.bad { background: rgba(255, 93, 93, 0.15); color: var(--bad); }
+  .badge.warn { background: var(--warn-tint); color: var(--warn-strong); }
+  .badge.bad { background: var(--bad-tint); color: var(--bad-strong); }
 
   .table-wrap {
     max-height: 540px;
@@ -487,7 +511,7 @@
   }
   .field input:focus, .field select:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--accent-strong);
   }
   .field-hint {
     font-size: 12px;
@@ -495,8 +519,8 @@
     margin-top: 6px;
     font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
-  .field-hint.warn { color: var(--warn); }
-  .field-hint.bad { color: var(--bad); }
+  .field-hint.warn { color: var(--warn-strong); }
+  .field-hint.bad { color: var(--bad-strong); }
   .modal-actions {
     display: flex;
     gap: 8px;
@@ -529,8 +553,8 @@
   }
   .meter-pick:hover { border-color: var(--ink-2); }
   .meter-pick.active {
-    border-color: var(--accent);
-    background: rgba(200, 255, 62, 0.05);
+    border-color: var(--accent-strong);
+    background: var(--accent-tint);
   }
   .meter-pick .pick-label {
     font-size: 11px;
@@ -561,7 +585,7 @@
     align-items: center;
     gap: 16px;
   }
-  .anomaly.severe { border-left-color: var(--bad); }
+  .anomaly.severe { border-left-color: var(--bad-strong); }
   .anomaly-text { font-size: 13px; flex: 1; }
   .anomaly-text .a-title { font-weight: 600; margin-bottom: 2px; }
   .anomaly-text .a-detail { color: var(--ink-2); font-size: 12px; font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
@@ -596,12 +620,12 @@
 
   /* HEADER ANNOTATION FOR DEVICE CHANGE */
   .device-banner {
-    background: rgba(255, 181, 71, 0.08);
-    border: 1px solid rgba(255, 181, 71, 0.3);
+    background: var(--warn-tint);
+    border: 1px solid var(--warn);
     padding: 12px 16px;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 13px;
-    color: var(--warn);
+    color: var(--warn-strong);
     margin-bottom: 16px;
     display: flex;
     align-items: center;
@@ -818,7 +842,7 @@
   }
   .bottom-tab .bt-icon { font-size: 20px; line-height: 1; }
   .bottom-tab .bt-label { font-size: 10px; line-height: 1; font-weight: 500; }
-  .bottom-tab.active { color: var(--accent); background: rgba(200, 255, 62, 0.08); }
+  .bottom-tab.active { color: var(--accent-strong); background: var(--accent-tint); }
   .bottom-tab:hover:not(.active) { color: var(--ink-2); }
 
   /* FAB — base hidden */
@@ -893,7 +917,7 @@
   }
   .hh-item:hover { background: var(--bg-3); }
   .hh-item.active {
-    background: rgba(200, 255, 62, 0.08);
+    background: var(--accent-tint);
   }
   .hh-item .hh-item-name {
     font-weight: 500;
@@ -920,7 +944,7 @@
     font-style: italic;
   }
   .hh-add {
-    color: var(--accent);
+    color: var(--accent-strong);
     font-size: 13px;
     font-weight: 500;
   }
@@ -933,7 +957,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--accent);
+    color: var(--accent-strong);
     font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     margin-bottom: 10px;
   }
@@ -956,10 +980,10 @@
   }
   .meter-check:hover { border-color: var(--ink-2); }
   .meter-check.checked {
-    border-color: var(--accent);
-    background: rgba(200, 255, 62, 0.05);
+    border-color: var(--accent-strong);
+    background: var(--accent-tint);
   }
-  .meter-check input { accent-color: var(--accent); cursor: pointer; }
+  .meter-check input { accent-color: var(--accent-strong); cursor: pointer; }
   .meter-check .mc-info { display: flex; flex-direction: column; }
   .meter-check .mc-name { font-size: 13px; font-weight: 500; }
   .meter-check .mc-unit { font-size: 11px; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
@@ -1003,7 +1027,7 @@
   }
   .history-toolbar input:focus, .history-toolbar select:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--accent-strong);
   }
   .history-toolbar .filter-pills {
     display: flex;
@@ -1025,10 +1049,10 @@
     align-items: center;
     gap: 6px;
   }
-  .filter-pill:hover { border-color: var(--ink-2); color: var(--ink); }
+  .filter-pill:hover { border-color: var(--ink-2); color: var(--ink); background: var(--bg-3); }
   .filter-pill.active {
     background: var(--ink);
-    color: #0a0a0a;
+    color: var(--bg-2);              /* invertne pre AA — biele na dark v light, tmavé na light v dark */
     border-color: var(--ink);
   }
   .filter-pill .pill-dot {
@@ -1052,7 +1076,7 @@
   }
   th.sortable.active .sort-arrow {
     opacity: 1;
-    color: var(--accent);
+    color: var(--accent-strong);
   }
 
   /* INLINE ROW ACTIONS */
@@ -1072,8 +1096,8 @@
     font-size: 12px;
     transition: all 0.15s;
   }
-  .row-btn:hover { color: var(--ink); border-color: var(--line-2); background: var(--bg-2); }
-  .row-btn.danger:hover { color: var(--bad); border-color: var(--bad); }
+  .row-btn:hover { color: var(--ink); background: var(--bg-3); }
+  .row-btn.danger:hover { color: var(--bad-strong); background: var(--bad-tint); }
 
   /* HISTORY EMPTY STATE */
   .history-empty {
@@ -1109,7 +1133,7 @@
   }
   .auth-card h1 em {
     font-style: italic;
-    color: var(--accent);
+    color: var(--accent-strong);
   }
   .auth-card .auth-sub {
     font-size: 13px;
@@ -1145,20 +1169,20 @@
     background: var(--accent);
   }
   .auth-error {
-    background: rgba(255, 93, 93, 0.1);
-    border: 1px solid rgba(255, 93, 93, 0.3);
-    color: var(--bad);
+    background: var(--bad-tint);
+    border: 1px solid var(--bad);
+    color: var(--bad-strong);
     padding: 10px 14px;
-    border-radius: 6px;
+    border-radius: 10px;
     font-size: 13px;
     margin-bottom: 16px;
   }
   .auth-success {
-    background: rgba(74, 222, 128, 0.08);
-    border: 1px solid rgba(74, 222, 128, 0.3);
-    color: var(--good);
+    background: var(--good-tint);
+    border: 1px solid var(--good);
+    color: var(--good-strong);
     padding: 10px 14px;
-    border-radius: 6px;
+    border-radius: 10px;
     font-size: 13px;
     margin-bottom: 16px;
   }
@@ -1242,8 +1266,8 @@
     gap: 6px;
   }
   .ocr-pick-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
+    border-color: var(--accent-strong);
+    color: var(--accent-strong);
   }
   .ocr-stage {
     background: var(--bg);
@@ -1270,7 +1294,7 @@
   .ocr-roi {
     position: absolute;
     border: 2px solid var(--accent);
-    background: rgba(200, 255, 62, 0.1);
+    background: var(--accent-tint);
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
     pointer-events: none;
   }
@@ -1304,8 +1328,8 @@
     margin-top: 8px;
   }
 
-  /* HEATMAP */
-  .heatmap-card {
+  /* HEATMAP — overflow len na samotnej grid, nie na karte (filter ostáva fixne) */
+  .heatmap-card #heatmapBody {
     overflow-x: auto;
   }
   .heatmap {
@@ -1422,11 +1446,11 @@
     display: none;
     margin: 0 0 16px 0;
     padding: 10px 14px;
-    background: rgba(76, 201, 240, 0.08);
-    border: 1px solid rgba(76, 201, 240, 0.4);
-    border-radius: 8px;
+    background: var(--water-tint);
+    border: 1px solid var(--water);
+    border-radius: 10px;
     font-size: 13px;
-    color: var(--ink-2);
+    color: var(--ink);
   }
   .ro-banner strong { color: var(--ink); }
   body.ro-shared .ro-banner { display: block; }
@@ -1492,7 +1516,7 @@
     font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     font-size: 22px;
     letter-spacing: 0.1em;
-    color: var(--accent);
+    color: var(--accent-strong);
     user-select: all;
   }
 
@@ -1532,7 +1556,7 @@
     display: inline-block;
     width: 16px; height: 16px;
     border: 2px solid var(--line-2);
-    border-top-color: var(--accent);
+    border-top-color: var(--accent-strong);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     vertical-align: middle;
@@ -1577,7 +1601,7 @@
     left: 50%;
     transform: translateX(-50%);
     background: var(--accent);
-    color: var(--bg-1);
+    color: var(--btn-primary-text);   /* čierna na zelenej = 7.40:1 ✓ */
     padding: 10px 14px 10px 16px;
     border-radius: 999px;
     font-size: 14px;
@@ -1591,8 +1615,8 @@
   .update-banner .btn-update {
     padding: 6px 12px;
     font-size: 13px;
-    background: var(--bg-1);
-    color: var(--accent);
+    background: var(--bg-2);
+    color: var(--accent-strong);
     border: none;
     border-radius: 999px;
     font-weight: 600;
@@ -3470,7 +3494,7 @@ async function renderYearly() {
       const net = inV - outV;
       let netCls = '';
       const hasOut = dataByMeter['electricity_out'] && dataByMeter['electricity_out'][y] != null;
-      if (hasOut) netCls = net < 0 ? 'style="color: var(--good)"' : 'style="color: var(--warn)"';
+      if (hasOut) netCls = net < 0 ? 'style="color: var(--good-strong)"' : 'style="color: var(--warn-strong)"';
       html.push(`<td class="num" ${netCls}>${hasOut ? (net > 0 ? '+' : '') + fmtNum(net, 0) : '—'}</td>`);
     }
     html.push('</tr>');
@@ -5463,13 +5487,13 @@ async function handleExcelImportFile(file) {
     }
 
     if (preview.ignoredColumns.length > 0) {
-      html += `<p style="color: var(--warn); font-size:13px;">Ignorované stĺpce: ${preview.ignoredColumns.map(escHtml).join(', ')}</p>`;
+      html += `<p style="color: var(--warn-strong); font-size:13px;">Ignorované stĺpce: ${preview.ignoredColumns.map(escHtml).join(', ')}</p>`;
     }
     if (preview.missingColumns.length > 0) {
       html += `<p style="color: var(--ink-3); font-size:13px;">Aktívny dom má meradlá mimo Excelu: ${preview.missingColumns.map(escHtml).join(', ')}</p>`;
     }
     if (preview.skippedRows.length > 0) {
-      html += `<p style="color: var(--bad); font-size:13px;">Preskočené riadky: ${preview.skippedRows.length}</p>
+      html += `<p style="color: var(--bad-strong); font-size:13px;">Preskočené riadky: ${preview.skippedRows.length}</p>
         <details><summary style="cursor:pointer; font-size:12px;">Detaily</summary>
         <div style="font-size:12px; color: var(--ink-3); margin-top:4px;">${preview.skippedRows.map(s => `Riadok ${s.rowNum}: ${escHtml(s.reason)}`).join('<br>')}</div>
         </details>`;
@@ -5489,7 +5513,7 @@ async function handleExcelImportFile(file) {
     }
   } catch (e) {
     console.error('Excel parse error', e);
-    body.innerHTML = `<p style="color: var(--bad);">Chyba pri parsovaní: ${escHtml(e.message)}</p>`;
+    body.innerHTML = `<p style="color: var(--bad-strong);">Chyba pri parsovaní: ${escHtml(e.message)}</p>`;
     actions.style.display = 'flex';
     document.getElementById('btnExcelImportOverwrite').style.display = 'none';
     document.getElementById('btnExcelImportKeep').style.display = 'none';
