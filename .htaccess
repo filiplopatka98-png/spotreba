@@ -41,6 +41,9 @@ DirectoryIndex index.html
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # SEO: zakáž indexovanie aj na úrovni HTTP (defense-in-depth k <meta robots>)
+    Header set X-Robots-Tag "noindex, nofollow, noarchive"
 </IfModule>
 
 # =============================================================

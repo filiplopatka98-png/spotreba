@@ -116,7 +116,8 @@ V **Nastavenia → Záloha dát**:
 ├── icon-192.png                     # PWA: any
 ├── icon-180.png                     # iOS apple-touch-icon
 ├── icon-32.png, icon-16.png         # Browser favicony
-├── .htaccess                        # Apache config pre WebSupport (HTTPS, gzip, cache)
+├── robots.txt                       # Disallow všetko (súkromná appka)
+├── .htaccess                        # Apache config pre WebSupport (HTTPS, gzip, cache, noindex)
 ├── supabase/
 │   ├── schema.sql                   # Inicializácia DB (Phase B — cloud sync)
 │   └── phase_c_migration.sql        # Doplnok pre Phase C (read-only zdieľanie)

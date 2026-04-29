@@ -1,0 +1,5 @@
+# Súkromná appka — žiaden bot ju nemá indexovať
+User-agent: *
+Disallow: /
+
+# Žiadny sitemap (zámerne)
