@@ -5,6 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spotreba — Tracker energií</title>
 
+<!-- Content Security Policy — defense-in-depth proti XSS / supply chain útokom -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+  connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com;
+  img-src 'self' data: blob:;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' https://fonts.gstatic.com;
+  worker-src 'self' blob:;
+  manifest-src 'self';
+  frame-ancestors 'none';
+  form-action 'self';
+  base-uri 'self';
+  object-src 'none';
+">
+
 <!-- SEO: súkromná appka, zakázať indexovanie -->
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="description" content="Súkromný tracker spotreby energií (elektrina, voda, plyn, FV). Vyžaduje prihlásenie.">
@@ -29,10 +45,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"
+        integrity="sha384-vG8R9Zn5YZHCeXt9gLNp8MnsUCqmIy7HPxhdOdLGa/30/c8uZXFrrN0iKGID/ZvC"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"
+        integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+        integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"
+        integrity="sha384-Ptw8HCYAWF6vIop6WuGxfSCiDCIzUWqjrHYfx8Vd0S4CMBaicAdBh2y+Ufle664A"
+        crossorigin="anonymous"></script>
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#0e0f10">
 
@@ -3140,9 +3164,9 @@ async function renderDashboard() {
       card.dataset.type = m.type;
       card.innerHTML = `
         <div class="meter-bar"></div>
-        <div class="meter-label">${m.name}</div>
+        <div class="meter-label">${escHtml(m.name)}</div>
         <div class="meter-value" style="color: var(--ink-3)">—</div>
-        <div class="meter-unit">${m.unit}</div>
+        <div class="meter-unit">${escHtml(m.unit)}</div>
         <div class="meter-meta"><span>Žiadne dáta</span></div>
       `;
       card.addEventListener('click', () => openAddModal(m.pk));
@@ -3172,11 +3196,11 @@ async function renderDashboard() {
     card.dataset.pk = m.pk;
     card.innerHTML = `
       <div class="meter-bar"></div>
-      <div class="meter-label">${m.name}</div>
+      <div class="meter-label">${escHtml(m.name)}</div>
       <div class="meter-value">${fmtNum(last.value, 0)}</div>
-      <div class="meter-unit">${m.unit} · stav počítadla</div>
+      <div class="meter-unit">${escHtml(m.unit)} · stav počítadla</div>
       <div class="meter-meta">
-        <span>${fmtNum(curMonth, 0)} ${m.unit} tento mes.</span>
+        <span>${fmtNum(curMonth, 0)} ${escHtml(m.unit)} tento mes.</span>
         ${deltaHTML}
       </div>
     `;
@@ -3273,7 +3297,7 @@ async function renderYearly() {
     return;
   }
   const html = ['<table><thead><tr><th>Rok</th>'];
-  for (const m of State.meters) html.push(`<th class="num">${m.name} (${m.unit})</th>`);
+  for (const m of State.meters) html.push(`<th class="num">${escHtml(m.name)} (${escHtml(m.unit)})</th>`);
   const showNet = State.meters.some(m => m.type === 'electricity_in') && State.meters.some(m => m.type === 'electricity_out');
   if (showNet) html.push('<th class="num">Netto el. (kWh)</th>');
   html.push('</tr></thead><tbody>');
@@ -3321,7 +3345,7 @@ function renderHistoryFilterPills() {
   for (const m of State.meters) {
     const p = document.createElement('button');
     p.className = 'filter-pill' + (historyState.meterFilter === m.pk ? ' active' : '');
-    p.innerHTML = `<span class="pill-dot" style="background: ${m.color}"></span>${m.name}`;
+    p.innerHTML = `<span class="pill-dot" style="background: ${m.color}"></span>${escHtml(m.name)}`;
     p.addEventListener('click', () => { historyState.meterFilter = m.pk; renderHistory(); });
     pills.appendChild(p);
   }
@@ -3414,10 +3438,10 @@ async function renderHistory() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${fmtDate(r.date)}</td>
-      <td><span class="badge" style="background: ${r.meter.color}22; color: ${r.meter.color}">${r.meter.name}</span></td>
-      <td class="num">${fmtNum(r.value, 0)} ${r.meter.unit}</td>
-      <td class="num">${r.delta != null ? fmtNum(r.delta, 0) + ' ' + r.meter.unit : '—'}</td>
-      <td>${r.note || ''}</td>
+      <td><span class="badge" style="background: ${r.meter.color}22; color: ${r.meter.color}">${escHtml(r.meter.name)}</span></td>
+      <td class="num">${fmtNum(r.value, 0)} ${escHtml(r.meter.unit)}</td>
+      <td class="num">${r.delta != null ? fmtNum(r.delta, 0) + ' ' + escHtml(r.meter.unit) : '—'}</td>
+      <td>${escHtml(r.note || '')}</td>
       <td>
         <div class="row-actions">
           <button class="row-btn" data-id="${r.id}" data-action="edit" title="Upraviť">✎</button>
@@ -3755,8 +3779,8 @@ async function renderAnomalies() {
     div.className = 'anomaly' + (a.severity === 'severe' ? ' severe' : '');
     div.innerHTML = `
       <div class="anomaly-text">
-        <div class="a-title">${def.name} — ${fmtMonth(a.ym)}</div>
-        <div class="a-detail">spotreba ${fmtNum(a.current, 0)} ${def.unit}, priemer minulých rokov ${fmtNum(a.avg, 0)} ${def.unit}</div>
+        <div class="a-title">${escHtml(def.name)} — ${fmtMonth(a.ym)}</div>
+        <div class="a-detail">spotreba ${fmtNum(a.current, 0)} ${escHtml(def.unit)}, priemer minulých rokov ${fmtNum(a.avg, 0)} ${escHtml(def.unit)}</div>
       </div>
       <span class="badge ${a.severity === 'severe' ? 'bad' : 'warn'}">+${fmtNum(a.pct, 0)}%</span>
     `;
@@ -3786,7 +3810,7 @@ function openAddModal(presetMeterPk = null) {
     const btn = document.createElement('button');
     btn.className = 'meter-pick' + (m.pk === presetMeterPk ? ' active' : '');
     btn.dataset.pk = m.pk;
-    btn.innerHTML = `<span class="pick-label">${m.unit}</span><span class="pick-name">${m.name}</span>`;
+    btn.innerHTML = `<span class="pick-label">${escHtml(m.unit)}</span><span class="pick-name">${escHtml(m.name)}</span>`;
     btn.addEventListener('click', () => {
       picker.querySelectorAll('.meter-pick').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -4299,7 +4323,7 @@ async function renderHeatmap() {
       } else {
         const intensity = Math.min(1, Math.max(0.05, v / max));
         const display = v < 1 ? '·' : Math.round(v);
-        html.push(`<div class="heatmap-cell" style="background: ${baseColor}; opacity: ${0.15 + intensity * 0.85}" title="${ym}: ${fmtNum(v, 0)} ${def.unit}">${display}</div>`);
+        html.push(`<div class="heatmap-cell" style="background: ${baseColor}; opacity: ${0.15 + intensity * 0.85}" title="${ym}: ${fmtNum(v, 0)} ${escHtml(def.unit)}">${display}</div>`);
       }
     }
   }
@@ -4313,7 +4337,7 @@ async function renderHeatmap() {
     <div class="heatmap-legend-cell" style="background: ${baseColor}; opacity: 0.8"></div>
     <div class="heatmap-legend-cell" style="background: ${baseColor}; opacity: 1.0"></div>
     <span>viac</span>
-    <span style="margin-left: auto">jednotka: ${def.unit}</span>
+    <span style="margin-left: auto">jednotka: ${escHtml(def.unit)}</span>
   </div>`);
 
   body.innerHTML = html.join('');
@@ -4343,8 +4367,8 @@ async function renderTariffSettings() {
     cell.style.margin = '0';
     const v = tariffs[m.type];
     cell.innerHTML = `
-      <label>${m.name} (€/${m.unit})</label>
-      <input type="number" step="0.0001" id="tariff_${m.type}" value="${v != null ? v : ''}" placeholder="napr. 0.18">
+      <label>${escHtml(m.name)} (€/${escHtml(m.unit)})</label>
+      <input type="number" step="0.0001" id="tariff_${escHtml(m.type)}" value="${v != null ? v : ''}" placeholder="napr. 0.18">
     `;
     grid.appendChild(cell);
   }
@@ -4441,10 +4465,10 @@ async function renderHouseholdSwitcher() {
       + (h.is_shared ? ' shared' : '');
     const lock = h.is_shared ? '<span class="hh-lock">🔒</span>' : '';
     const ownerLine = (h.is_shared && h.owner_label)
-      ? `<div class="hh-item-owner">vlastník: ${h.owner_label}</div>` : '';
+      ? `<div class="hh-item-owner">vlastník: ${escHtml(h.owner_label)}</div>` : '';
     item.innerHTML = `
-      <div class="hh-item-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${h.name}${lock}</div>
-      ${h.address ? `<div class="hh-item-addr">${h.address}</div>` : ''}
+      <div class="hh-item-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${escHtml(h.name)}${lock}</div>
+      ${h.address ? `<div class="hh-item-addr">${escHtml(h.address)}</div>` : ''}
       ${ownerLine}
     `;
     item.addEventListener('click', async () => {
@@ -4555,7 +4579,7 @@ async function renderHouseholdsList() {
     const item = document.createElement('div');
     item.className = 'hh-list-item' + (h.is_shared ? ' shared' : '');
     const sharedTag = h.is_shared ? ` <span class="hh-lock" title="Zdieľaný — iba na čítanie">🔒</span>` : '';
-    const ownerLine = (h.is_shared && h.owner_label) ? ` · vlastník ${h.owner_label}` : '';
+    const ownerLine = (h.is_shared && h.owner_label) ? ` · vlastník ${escHtml(h.owner_label)}` : '';
     const actions = h.is_shared
       ? `${h.id !== State.activeHouseholdId ? `<button class="row-btn" data-action="switch" data-id="${h.id}" title="Aktivovať">→</button>` : ''}`
       : `${h.id !== State.activeHouseholdId ? `<button class="row-btn" data-action="switch" data-id="${h.id}" title="Aktivovať">→</button>` : ''}
@@ -4563,8 +4587,8 @@ async function renderHouseholdsList() {
          <button class="row-btn danger" data-action="delete" data-id="${h.id}" title="Zmazať">×</button>`;
     item.innerHTML = `
       <div class="hh-li-info">
-        <span class="hh-li-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${h.name}${sharedTag}</span>
-        <span class="hh-li-meta">${h.address || 'bez adresy'} · ${meters.length} meradiel · ${readingCount} odpočtov${ownerLine}</span>
+        <span class="hh-li-name">${h.id === State.activeHouseholdId ? '✓ ' : ''}${escHtml(h.name)}${sharedTag}</span>
+        <span class="hh-li-meta">${escHtml(h.address || 'bez adresy')} · ${meters.length} meradiel · ${readingCount} odpočtov${ownerLine}</span>
       </div>
       <div class="hh-li-actions">${actions}</div>
     `;
@@ -5030,6 +5054,8 @@ async function loadXlsx() {
   xlsxLoadPromise = new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.integrity = 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw';
+    s.crossOrigin = 'anonymous';
     s.onload = () => resolve(window.XLSX);
     s.onerror = () => reject(new Error('Nepodarilo sa stiahnuť Excel knižnicu (XLSX)'));
     document.head.appendChild(s);

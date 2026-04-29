@@ -42,8 +42,20 @@ DirectoryIndex index.html
     Header set X-Frame-Options "SAMEORIGIN"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
 
+    # HSTS — vynúti HTTPS aj pri budúcich návštevách (1 rok, vrátane subdomén).
+    # Aktivuj len ak si si istý že VŠETKY subdomény pôjdu cez HTTPS.
+    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+    # Permissions-Policy — explicitne povolené iba camera (pre OCR), ostatné zakázané.
+    Header set Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+
     # SEO: zakáž indexovanie aj na úrovni HTTP (defense-in-depth k <meta robots>)
     Header set X-Robots-Tag "noindex, nofollow, noarchive"
+
+    # CSP — defense-in-depth proti XSS / CDN compromise.
+    # Inline scripts vyžadované (single-file appka). Allowlist na cdn.jsdelivr (libs)
+    # a *.supabase.co (auth + REST + Storage).
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'"
 </IfModule>
 
 # =============================================================
