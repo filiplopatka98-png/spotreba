@@ -73,9 +73,13 @@ const SUPABASE_ANON_KEY = '...';
 
 ## Bezpečnosť
 
-- Anon key je verejný (štandard Supabase) — bezpečnosť zabezpečuje Row Level Security
-- Po vytvorení všetkých účtov **vypni nové registrácie** v Supabase: Authentication → Providers → Email → Disable new user signups
-- HTTPS je povinné v produkcii (Supabase auth cookies)
+- Anon key je verejný (štandard Supabase) — bezpečnosť zabezpečuje Row Level Security.
+- Po vytvorení všetkých účtov **vypni nové registrácie** v Supabase: Authentication → Providers → Email → Disable new user signups.
+- HTTPS je povinné v produkcii (Supabase auth cookies).
+- **CSP + SRI**: aplikácia má Content Security Policy (script-src allowlist + frame-ancestors none) v `<meta>` aj v `.htaccess` Header, plus SHA-384 integrity hashe na všetkých CDN scriptoch (Dexie, Supabase, Chart.js, Tesseract, SheetJS). Ochrana proti XSS aj kompromitovanému CDN.
+- **HSTS + Permissions-Policy** sa nasadia automaticky cez `.htaccess` (WebSupport). GitHub Pages neumožňuje custom HTTP headers — preto sú tam len meta tagy.
+- **Indexovanie zakázané**: `<meta name="robots" content="noindex, nofollow, noarchive">`, `robots.txt` s `Disallow: /`, plus `X-Robots-Tag` HTTP header.
+- **XSS hardening**: všetok user-content (názvy domov, poznámky odpočtov) sa pred renderom escapuje cez globálnu `escHtml()` funkciu.
 
 ## Zdieľanie domov (Phase C)
 

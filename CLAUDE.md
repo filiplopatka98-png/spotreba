@@ -6,8 +6,11 @@ Single-file HTML aplikácia na sledovanie spotreby energií (elektrina/FV/voda/p
 
 ## Tech a runtime
 
-- **Single-file HTML** — všetko (HTML, CSS, vanilla JS) je v `index.html` (~4700 riadkov). Žiadny build step, žiadny npm.
-- Externé knižnice cez CDN: Dexie, Chart.js, Tesseract.js, Supabase JS SDK.
+- **Single-file HTML** — všetko (HTML, CSS, vanilla JS) je v `index.html` (~5300 riadkov). Žiadny build step, žiadny npm.
+- Externé knižnice cez CDN (s SRI integrity hashmi):
+  - Eager v `<head>`: Dexie 3.2.4, Supabase JS 2.45.4 (potrebné pri startApp pre auth + lokálnu DB)
+  - Lazy-loaded cez `loadScriptOnce(url, integrity)` helper: Chart.js 4.4.0 (preload v startApp), Tesseract.js 5.0.4 (na prvý OCR), SheetJS 0.18.5 (na prvý Excel import/export)
+- PWA: `service-worker.js` (network-first pre app shell, cache-first pre CDN libs), `manifest.json`, kompletné ikony (SVG zdroj + PNG 16/32/180/192/512), iOS apple-touch-icon.
 - Cieľové prostredia: GitHub Pages (live), WebSupport (plánované), `python3 -m http.server 8000` (lokálne).
 
 ## Ako spustiť lokálne
@@ -31,10 +34,11 @@ HTTP server je nutný (nie `file://`) kvôli CORS pri Supabase auth cookies.
 
 ## Sync model (Phase B + Phase C)
 
-- **Push** (lokálne → cloud): debounced 800ms po každej zmene, cez `schedulePush()` → `pushAll()`.
+- **Push** (lokálne → cloud): debounced 800ms po každej zmene, cez `schedulePush()` → `pushAll()`. `is_shared` domy sa do push-u filtrujú preč (read-only).
 - **Pull** (cloud → lokálne): pri prihlásení a manuálne cez "Vykonať plnú synchronizáciu" v Settings.
 - **Mapovanie**: lokálne PK ↔ cloud ID je v `Sync.maps`, perzistované v `db.settings` pod kľúčom `syncMaps`.
 - **Konflikty**: nie sú riešené — last-write-wins. Pri jednom userovi cez viacero zariadení v praxi neproblém.
+- **User-switch wipe**: `startApp` na úvode porovná `Sync.user.id` proti uloženému `lastUserId` v `db.settings`. Ak sa user zmenil → vyčistí lokálnu Dexie pred sync-om. Bez tohto by sa cudzie dáta pushli pod nového user_id (cross-account leak — fix z 2026-04-29).
 
 ## Phase C — read-only zdieľanie domov
 
@@ -60,22 +64,32 @@ HTTP server je nutný (nie `file://`) kvôli CORS pri Supabase auth cookies.
 3. Po zmene grantov: `NOTIFY pgrst, 'reload schema';` aby PostgREST okamžite obnovil cache (inak ~10s lag).
 4. Anon key (`SUPABASE_ANON_KEY` v `index.html`) je verejný — bezpečnosť rieši RLS.
 
+## Bezpečnosť
+
+- **CSP** v `<meta http-equiv>` aj `.htaccess` Header. Allowlists: `cdn.jsdelivr.net`, `unpkg.com` (Tesseract core), `tessdata.projectnaptha.com` (Tesseract jazykové dáta), `*.supabase.co`, Google Fonts.
+- **SRI** (`integrity="sha384-..."`) na všetkých 5 CDN scriptoch (Dexie, Supabase, Chart.js, Tesseract, SheetJS). Pri update verzie knižnice nezabudni prepočítať hash: `curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+- **HSTS + Permissions-Policy** v `.htaccess` (WebSupport). GitHub Pages ich nepodporuje, ale meta CSP + robots.txt + noindex meta to čiastočne nahradzujú.
+- **noindex** — `<meta name="robots">`, `robots.txt`, `X-Robots-Tag` HTTP header. Súkromná appka.
+- **XSS escape**: `escHtml(s)` (globálna funkcia) sa POVINNE volá pri každej user-content interpolácii do `innerHTML` (názov domu, poznámka odpočtu, owner email, atď.). Pri pridávaní novej render funkcie nezabudni!
+
 ## Bežné úlohy a kde to žije v `index.html`
 
 | Téma | Riadky (orientačne) |
 |---|---|
-| Supabase client init | ~1530 |
-| Auth UI + handlers | ~2020, ~2150 |
-| `pullFromCloud` | ~1760 |
-| `pushAll` | ~1970 |
-| Dexie schema | ~2110 |
-| State (`activeHouseholdId`, `household`, `meters`) | ~2310 |
-| Household switcher render | ~3950 |
-| Settings tab HTML | ~1290 |
-| Phase C JS (sharing, RO mode) | ~4310–4520 |
-| Excel import/export modul | ~4970–5300 |
-| Event handlery (button bindings) | ~4540+ |
-| `startApp` | ~4670 |
+| Supabase client init | ~1640 |
+| Auth UI + handlers | ~2130, ~2260 |
+| `pullFromCloud` | ~1860 |
+| `pushAll` | ~2070 |
+| Dexie schema | ~2210 |
+| State (`activeHouseholdId`, `household`, `meters`) | ~2410 |
+| Household switcher render | ~4470 |
+| Settings tab HTML | ~1390 |
+| Phase C JS (sharing, RO mode) | ~4630–4870 |
+| Excel import/export modul | ~5070–5400 |
+| Lazy-loader + lib loaders (`loadChartJs`, `loadTesseract`, `loadXlsx`) | ~5040 |
+| PWA SW registration + update prompt | ~5410 |
+| Event handlery (button bindings) | ~4870+ |
+| `startApp` | ~5060 |
 
 Pre presné lokácie použi grep — riadky sa posúvajú s editmi.
 
