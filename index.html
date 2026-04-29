@@ -1709,12 +1709,16 @@
     <div class="card">
       <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Záloha dát</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
-        Stiahni si všetky lokálne dáta ako JSON, alebo ich nahraj späť po reinštalácii.
+        <strong>JSON</strong> = univerzálny full-backup (všetko, vrátane settings).
+        <strong>Excel</strong> = human-friendly, len odpočty aktívneho domu (mesačne).
       </p>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
         <button class="btn" id="btnExportSettings">Export JSON</button>
         <button class="btn" id="btnImportSettings">Import JSON</button>
+        <button class="btn" id="btnExportExcel">Export Excel</button>
+        <button class="btn" id="btnImportExcel">Import Excel</button>
       </div>
+      <input type="file" id="fileExcelImport" accept=".xlsx,.xls" style="display:none">
     </div>
 
     <div class="card">
@@ -1789,6 +1793,21 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btnHhEditCancel">Zrušiť</button>
       <button class="btn btn-primary" id="btnHhEditSave">Uložiť</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXCEL IMPORT PREVIEW MODAL -->
+<div id="excelImportModal" class="modal-overlay hidden">
+  <div class="modal" style="max-width: 600px;">
+    <h3>Import z Excelu</h3>
+    <div id="excelImportBody">
+      <div class="share-empty">Načítavam…</div>
+    </div>
+    <div class="modal-actions" id="excelImportActions" style="display:none">
+      <button class="btn btn-ghost" id="btnExcelImportCancel">Zrušiť</button>
+      <button class="btn" id="btnExcelImportKeep">Ponechať pôvodné</button>
+      <button class="btn btn-primary" id="btnExcelImportOverwrite">Prepísať konflikty</button>
     </div>
   </div>
 </div>
@@ -4846,6 +4865,30 @@ const btnImportSet = document.getElementById('btnImportSettings');
 if (btnExportSet) btnExportSet.addEventListener('click', exportData);
 if (btnImportSet) btnImportSet.addEventListener('click', () => document.getElementById('fileImport').click());
 
+// Excel export/import handlery
+const btnExportXls = document.getElementById('btnExportExcel');
+const btnImportXls = document.getElementById('btnImportExcel');
+if (btnExportXls) btnExportXls.addEventListener('click', async () => {
+  try { await exportExcel(); }
+  catch (e) { toast('Export zlyhal: ' + e.message, true); console.error(e); }
+});
+if (btnImportXls) btnImportXls.addEventListener('click', () => {
+  if (!ensureWritable()) return;
+  document.getElementById('fileExcelImport').click();
+});
+const fileXlsImport = document.getElementById('fileExcelImport');
+if (fileXlsImport) fileXlsImport.addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) await handleExcelImportFile(f);
+});
+document.getElementById('btnExcelImportCancel').addEventListener('click', () => {
+  pendingExcelImport = null;
+  document.getElementById('excelImportModal').classList.add('hidden');
+});
+document.getElementById('btnExcelImportOverwrite').addEventListener('click', () => performExcelImport(true));
+document.getElementById('btnExcelImportKeep').addEventListener('click', () => performExcelImport(false));
+
 // PWA install prompt — Chrome/Edge fire 'beforeinstallprompt' keď spĺňa criteria
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -4950,6 +4993,415 @@ window.addEventListener('mouseup', ocrPointerEnd);
 ocrWrap.addEventListener('touchstart', ocrPointerStart, { passive: false });
 ocrWrap.addEventListener('touchmove', ocrPointerMove, { passive: false });
 ocrWrap.addEventListener('touchend', ocrPointerEnd);
+
+/* =============================================================
+   EXCEL — import/export (xlsx)
+   ============================================================= */
+
+const SK_MONTHS_GEN = ['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
+const SK_MONTHS_NOM = ['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+
+let xlsxLoadPromise = null;
+async function loadXlsx() {
+  if (window.XLSX) return window.XLSX;
+  if (xlsxLoadPromise) return xlsxLoadPromise;
+  xlsxLoadPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => reject(new Error('Nepodarilo sa stiahnuť Excel knižnicu (XLSX)'));
+    document.head.appendChild(s);
+  });
+  return xlsxLoadPromise;
+}
+
+function fmtDateSk(date) {
+  const d = (date instanceof Date) ? date : new Date(date + 'T00:00:00');
+  return `${d.getDate()}. ${SK_MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function parseDateMaybe(cell) {
+  if (cell == null || cell === '') return null;
+  if (cell instanceof Date && !isNaN(cell)) {
+    const y = cell.getFullYear(), m = String(cell.getMonth()+1).padStart(2,'0'), d = String(cell.getDate()).padStart(2,'0');
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof cell === 'number') {
+    const d = new Date(Date.UTC(1899, 11, 30) + cell * 86400000);
+    if (!isNaN(d)) return d.toISOString().split('T')[0];
+    return null;
+  }
+  const s = String(cell).trim();
+  if (!s) return null;
+  const skMatch = s.match(/^(\d{1,2})\.\s*([a-záéíóúýčďĺľňŕšťž]+)\s+(\d{4})$/i);
+  if (skMatch) {
+    const day = parseInt(skMatch[1]);
+    const monthName = skMatch[2].toLowerCase();
+    const year = parseInt(skMatch[3]);
+    let monthIdx = SK_MONTHS_GEN.findIndex(m => m === monthName);
+    if (monthIdx === -1) monthIdx = SK_MONTHS_NOM.findIndex(m => m === monthName);
+    if (monthIdx >= 0) {
+      const d = new Date(year, monthIdx, day);
+      if (!isNaN(d)) return `${year}-${String(monthIdx+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (!isNaN(d)) return d.toISOString().split('T')[0];
+  return null;
+}
+
+function quantizeToMonthStart(isoDate) {
+  return isoDate.substring(0, 7) + '-01';
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+const EXCEL_METER_ORDER = [
+  { type: 'gas', label: 'plyn' },
+  { type: 'water', label: 'voda' },
+  { type: 'electricity_in', label: 'elektrina' },
+  { type: 'electricity_out', label: 'fv-predaj' }
+];
+
+function getEnabledMeterColumns() {
+  return EXCEL_METER_ORDER
+    .map(def => ({ ...def, meter: meterByType(def.type) }))
+    .filter(x => x.meter != null);
+}
+
+async function parseExcelFile(file) {
+  const XLSX = await loadXlsx();
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  if (wb.SheetNames.length === 0) throw new Error('Excel je prázdny');
+  const sheetName = wb.SheetNames[0];
+  const sheet = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+  return { rows, sheetName, multipleSheets: wb.SheetNames.length > 1 };
+}
+
+function detectExcelStructure(rows) {
+  if (rows.length < 2) throw new Error('Excel má príliš málo riadkov (chýba hlavička alebo dáta)');
+  const header = rows[0].map(h => h == null ? '' : String(h).trim().toLowerCase());
+  const meters = [];
+  for (let i = 1; i + 1 < header.length; i += 2) {
+    const lbl = header[i];
+    let matched = null;
+    for (const def of EXCEL_METER_ORDER) {
+      if (lbl === def.label || lbl === def.label.replace('-','')) { matched = def; break; }
+    }
+    if (matched) meters.push({ stavCol: i, spotrebaCol: i+1, label: matched.label, type: matched.type });
+    else if (lbl) meters.push({ stavCol: i, spotrebaCol: i+1, label: lbl, type: null });
+  }
+  return meters;
+}
+
+async function buildImportPreview(rows, structure) {
+  const enabled = getEnabledMeterColumns();
+  const enabledTypes = new Set(enabled.map(e => e.type));
+
+  const skippedRows = [];
+  const newReadings = [];
+  const conflicts = [];
+  const replacements = [];
+  const ignoredColumns = [];
+  const missingColumns = [];
+
+  for (const col of structure) {
+    if (!col.type) ignoredColumns.push(col.label + ' (neznáme)');
+    else if (!enabledTypes.has(col.type)) ignoredColumns.push(col.label);
+  }
+  for (const en of enabled) {
+    if (!structure.find(s => s.type === en.type)) missingColumns.push(en.label);
+  }
+
+  // Pre-compute: parse all rows with valid dates first, then sort chronologically per meter
+  const parsedRows = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.every(c => c == null || c === '')) continue;
+    const isoDate = parseDateMaybe(row[0]);
+    if (!isoDate) {
+      skippedRows.push({ rowNum: r+1, reason: 'neplatný dátum: ' + row[0] });
+      continue;
+    }
+    parsedRows.push({ rowNum: r+1, date: quantizeToMonthStart(isoDate), row });
+  }
+  parsedRows.sort((a, b) => a.date.localeCompare(b.date));
+
+  const prevStavByType = {};
+  for (const pr of parsedRows) {
+    for (const col of structure) {
+      if (!col.type || !enabledTypes.has(col.type)) continue;
+      const stavRaw = pr.row[col.stavCol];
+      const spotRaw = pr.row[col.spotrebaCol];
+      if (stavRaw == null || stavRaw === '') continue;
+      const stav = parseFloat(stavRaw);
+      if (!isFinite(stav)) {
+        skippedRows.push({ rowNum: pr.rowNum, reason: `${col.label} stav: nečíslo "${stavRaw}"` });
+        continue;
+      }
+      const spotreba = parseFloat(spotRaw);
+
+      const prev = prevStavByType[col.type];
+      let isReplacement = false;
+      if (prev != null && stav < prev.stav && (isFinite(spotreba) ? spotreba > 0 : true)) {
+        isReplacement = true;
+        replacements.push({
+          type: col.type, label: col.label,
+          prevDate: prev.date, currentDate: pr.date,
+          prevStav: prev.stav, currentStav: stav,
+          spotreba: isFinite(spotreba) ? spotreba : null
+        });
+      }
+      prevStavByType[col.type] = { date: pr.date, stav };
+
+      const meter = enabled.find(e => e.type === col.type).meter;
+      const existing = await db.readings.where('[meterPk+date]').equals([meter.pk, pr.date]).first();
+      const item = {
+        date: pr.date, meterType: col.type, meterPk: meter.pk,
+        meterName: meter.name, meterUnit: meter.unit,
+        value: stav, isReplacement,
+        existingId: existing ? existing.id : null,
+      };
+      if (existing) conflicts.push({ ...item, oldValue: existing.value });
+      else newReadings.push(item);
+    }
+  }
+
+  return { newReadings, conflicts, replacements, skippedRows, ignoredColumns, missingColumns };
+}
+
+let pendingExcelImport = null;
+
+async function handleExcelImportFile(file) {
+  if (!ensureWritable()) return;
+  if (!State.household) { toast('Najprv si vyber dom', true); return; }
+
+  const modal = document.getElementById('excelImportModal');
+  const body = document.getElementById('excelImportBody');
+  const actions = document.getElementById('excelImportActions');
+  modal.classList.remove('hidden');
+  actions.style.display = 'none';
+  body.innerHTML = '<div class="share-empty">Parsujem Excel…</div>';
+
+  try {
+    const { rows, sheetName, multipleSheets } = await parseExcelFile(file);
+    const structure = detectExcelStructure(rows);
+    const preview = await buildImportPreview(rows, structure);
+    pendingExcelImport = { ...preview, fileName: file.name };
+
+    let html = `
+      <p style="margin-bottom:6px"><strong>Aktívny dom:</strong> ${escHtml(State.household.name)}</p>
+      <p style="margin-bottom:6px; font-size:13px; color: var(--ink-2);"><strong>Súbor:</strong> ${escHtml(file.name)}${multipleSheets ? ` <em>(viaceré sheety, použitý "${escHtml(sheetName)}")</em>` : ''}</p>
+      <div style="border-top:1px solid var(--line); margin: 12px 0; padding-top:12px;">
+        <p>✓ <strong>${preview.newReadings.length}</strong> nových odpočtov</p>`;
+
+    if (preview.conflicts.length > 0) {
+      html += `<p>⚠ <strong>${preview.conflicts.length}</strong> konfliktov (rovnaké meradlo + dátum):</p>
+        <div style="max-height:160px; overflow-y:auto; background: var(--bg); padding: 8px; border-radius:6px; font-size:12px; font-family: 'JetBrains Mono', monospace; margin-bottom: 8px;">`;
+      for (const c of preview.conflicts.slice(0, 30)) {
+        html += `<div>• ${fmtDate(c.date)} ${escHtml(c.meterName)}: ${fmtNum(c.oldValue,0)} → ${fmtNum(c.value,0)} ${escHtml(c.meterUnit)}</div>`;
+      }
+      if (preview.conflicts.length > 30) html += `<div>… a ďalších ${preview.conflicts.length - 30}</div>`;
+      html += `</div>`;
+    }
+
+    if (preview.replacements.length > 0) {
+      html += `<p>🔄 <strong>${preview.replacements.length}</strong> detekovaných výmen meračov:</p><ul style="margin: 4px 0 8px 20px; font-size:13px;">`;
+      for (const rep of preview.replacements) {
+        html += `<li>${escHtml(rep.label)}: ${fmtDate(rep.prevDate)} (${fmtNum(rep.prevStav,0)}) → ${fmtDate(rep.currentDate)} (${fmtNum(rep.currentStav,0)})</li>`;
+      }
+      html += `</ul><p style="font-size:12px; color: var(--ink-3); margin-bottom:8px;">⚠ Initial/final hodnoty sú odhady — skontroluj v Settings → Výmena merača.</p>`;
+    }
+
+    if (preview.ignoredColumns.length > 0) {
+      html += `<p style="color: var(--warn); font-size:13px;">Ignorované stĺpce: ${preview.ignoredColumns.map(escHtml).join(', ')}</p>`;
+    }
+    if (preview.missingColumns.length > 0) {
+      html += `<p style="color: var(--ink-3); font-size:13px;">Aktívny dom má meradlá mimo Excelu: ${preview.missingColumns.map(escHtml).join(', ')}</p>`;
+    }
+    if (preview.skippedRows.length > 0) {
+      html += `<p style="color: var(--bad); font-size:13px;">Preskočené riadky: ${preview.skippedRows.length}</p>
+        <details><summary style="cursor:pointer; font-size:12px;">Detaily</summary>
+        <div style="font-size:12px; color: var(--ink-3); margin-top:4px;">${preview.skippedRows.map(s => `Riadok ${s.rowNum}: ${escHtml(s.reason)}`).join('<br>')}</div>
+        </details>`;
+    }
+    html += `</div>`;
+
+    body.innerHTML = html;
+    actions.style.display = 'flex';
+    const overwriteBtn = document.getElementById('btnExcelImportOverwrite');
+    const keepBtn = document.getElementById('btnExcelImportKeep');
+    overwriteBtn.style.display = preview.conflicts.length > 0 ? 'inline-flex' : 'none';
+    keepBtn.textContent = preview.conflicts.length > 0 ? 'Ponechať pôvodné' : 'Importovať';
+    if (preview.newReadings.length === 0 && preview.conflicts.length === 0) {
+      keepBtn.style.display = 'none';
+    } else {
+      keepBtn.style.display = 'inline-flex';
+    }
+  } catch (e) {
+    console.error('Excel parse error', e);
+    body.innerHTML = `<p style="color: var(--bad);">Chyba pri parsovaní: ${escHtml(e.message)}</p>`;
+    actions.style.display = 'flex';
+    document.getElementById('btnExcelImportOverwrite').style.display = 'none';
+    document.getElementById('btnExcelImportKeep').style.display = 'none';
+  }
+}
+
+async function performExcelImport(overwriteConflicts) {
+  if (!pendingExcelImport) return;
+  const { newReadings, conflicts, replacements } = pendingExcelImport;
+
+  const replacementsByMeter = {};
+  for (const rep of replacements) {
+    const meter = State.meters.find(m => m.type === rep.type);
+    if (!meter) continue;
+    const oldDevice = await db.devices
+      .where('meterPk').equals(meter.pk)
+      .filter(d => !d.replacedDate)
+      .first();
+    if (oldDevice) {
+      await db.devices.update(oldDevice.id, {
+        replacedDate: rep.currentDate,
+        finalValue: rep.prevStav
+      });
+    }
+    const newDeviceId = await db.devices.add({
+      householdId: State.activeHouseholdId,
+      meterPk: meter.pk,
+      installedDate: rep.currentDate,
+      initialValue: 0,
+      replacedDate: null,
+      finalValue: null
+    });
+    if (!replacementsByMeter[meter.pk]) replacementsByMeter[meter.pk] = [];
+    replacementsByMeter[meter.pk].push({ atDate: rep.currentDate, newDeviceId });
+  }
+
+  async function getDeviceIdForReading(meterPk, date) {
+    const reps = (replacementsByMeter[meterPk] || []).slice().reverse();
+    for (const r of reps) {
+      if (date >= r.atDate) return r.newDeviceId;
+    }
+    const devices = await db.devices.where('meterPk').equals(meterPk).toArray();
+    for (const d of devices) {
+      if (date >= d.installedDate && (!d.replacedDate || date < d.replacedDate)) return d.id;
+    }
+    if (devices.length > 0) return devices[devices.length - 1].id;
+    return null;
+  }
+
+  let inserted = 0;
+  for (const r of newReadings) {
+    const deviceId = await getDeviceIdForReading(r.meterPk, r.date);
+    if (deviceId == null) { console.warn('No device for', r); continue; }
+    await db.readings.add({
+      householdId: State.activeHouseholdId,
+      meterPk: r.meterPk,
+      deviceId, date: r.date, value: r.value, note: null
+    });
+    inserted++;
+  }
+
+  let updated = 0, skipped = 0;
+  if (overwriteConflicts) {
+    for (const c of conflicts) {
+      const deviceId = await getDeviceIdForReading(c.meterPk, c.date);
+      const patch = { value: c.value };
+      if (deviceId != null) patch.deviceId = deviceId;
+      await db.readings.update(c.existingId, patch);
+      updated++;
+    }
+  } else {
+    skipped = conflicts.length;
+  }
+
+  pendingExcelImport = null;
+  document.getElementById('excelImportModal').classList.add('hidden');
+
+  const parts = [`+${inserted} nových`];
+  if (updated) parts.push(`${updated} prepísaných`);
+  if (skipped) parts.push(`${skipped} preskočených`);
+  if (replacements.length) parts.push(`${replacements.length} výmen`);
+  toast(`Import: ${parts.join(', ')}`);
+
+  await refresh();
+  schedulePush();
+}
+
+async function exportExcel() {
+  if (!State.household) { toast('Najprv si vyber dom', true); return; }
+  const XLSX = await loadXlsx();
+  const enabled = getEnabledMeterColumns();
+  if (enabled.length === 0) { toast('Aktívny dom nemá meradlá', true); return; }
+
+  const allReadings = await db.readings.where('householdId').equals(State.activeHouseholdId).toArray();
+  if (allReadings.length === 0) { toast('Žiadne odpočty na export', true); return; }
+
+  const byMonth = {};
+  for (const r of allReadings) {
+    const monthKey = quantizeToMonthStart(r.date);
+    if (!byMonth[monthKey]) byMonth[monthKey] = {};
+    const existing = byMonth[monthKey][r.meterPk];
+    if (!existing || r.date > existing.date) byMonth[monthKey][r.meterPk] = r;
+  }
+  const sortedMonths = Object.keys(byMonth).sort();
+
+  const header = ['mesiac'];
+  for (const e of enabled) header.push(e.label, e.label);
+  const dataRows = [header];
+
+  const lastByMeter = {};
+  const devicesByMeter = {};
+  for (const e of enabled) {
+    devicesByMeter[e.meter.pk] = await db.devices.where('meterPk').equals(e.meter.pk).sortBy('installedDate');
+  }
+
+  for (const month of sortedMonths) {
+    const row = [fmtDateSk(month)];
+    for (const e of enabled) {
+      const reading = byMonth[month][e.meter.pk];
+      if (!reading) { row.push('', ''); continue; }
+      const stav = reading.value;
+      const last = lastByMeter[e.meter.pk];
+      let spotreba = '';
+      if (last != null) {
+        if (stav >= last.value) {
+          spotreba = stav - last.value;
+        } else {
+          const devs = devicesByMeter[e.meter.pk];
+          const oldDev = devs.find(d => d.id === last.deviceId);
+          const newDev = devs.find(d => d.id === reading.deviceId);
+          if (oldDev && newDev && oldDev.id !== newDev.id) {
+            const oldFinal = oldDev.finalValue ?? last.value;
+            const newInit = newDev.initialValue ?? 0;
+            spotreba = (oldFinal - last.value) + (stav - newInit);
+          } else {
+            spotreba = '';
+          }
+        }
+      }
+      row.push(stav, spotreba);
+      lastByMeter[e.meter.pk] = reading;
+    }
+    dataRows.push(row);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(dataRows);
+  // Stĺpce: rozumné šírky (mesiac širšie, čísla užšie)
+  ws['!cols'] = [{ wch: 22 }, ...enabled.flatMap(() => [{ wch: 12 }, { wch: 12 }])];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Spotreba');
+
+  const safeName = String(State.household.name).replace(/[^\w\-]/g, '_');
+  const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+  XLSX.writeFile(wb, `spotreba-${safeName}-${today}.xlsx`);
+  toast('Excel exportovaný');
+}
 
 /* =============================================================
    PWA — service worker registration + update prompt
