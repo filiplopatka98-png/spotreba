@@ -119,3 +119,22 @@ CREATE TRIGGER meters_updated BEFORE UPDATE ON meters FOR EACH ROW EXECUTE FUNCT
 CREATE TRIGGER devices_updated BEFORE UPDATE ON devices FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER readings_updated BEFORE UPDATE ON readings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER user_settings_updated BEFORE UPDATE ON user_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =====================================================
+-- GRANTY pre rolu authenticated (RLS aj tak filtruje riadky)
+-- POZN: Tabuľky vytvorené cez SQL Editor nedostanú auto-grant
+-- (oproti vytvoreniu cez Dashboard UI). Bez týchto grantov
+-- by každý query klienta vrátil 403 / "permission denied".
+-- =====================================================
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON households    TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON meters        TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON devices       TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON readings      TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON user_settings TO authenticated;
+
+GRANT USAGE, SELECT ON SEQUENCE households_id_seq TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE meters_id_seq     TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE devices_id_seq    TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE readings_id_seq   TO authenticated;
+-- user_settings má UUID PK, nepotrebuje sequence grant.

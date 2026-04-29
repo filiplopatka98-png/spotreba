@@ -251,5 +251,32 @@ REVOKE ALL ON FUNCTION get_user_emails(UUID[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION get_user_emails(UUID[]) TO authenticated;
 
 -- =====================================================
--- Hotovo. Po spustení by všetky CREATE/DROP mali prejsť bez chyby.
+-- 6) Table-level grants pre rolu authenticated
+--    (RLS politiky stále platia nad týmto — toto je len
+--     postgres-úroveňové povolenie použiť tabuľku vôbec.)
+--
+--    Tabuľky vytvorené cez SQL Editor (vrátane originálnej
+--    schema.sql) nedostávajú auto-grant. Idempotentne to tu
+--    dohnáme aj pre staré tabuľky, nielen household_shares —
+--    bez tohto by sync silently 403-oval pre všetkých.
+-- =====================================================
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON households       TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON meters           TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON devices          TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON readings         TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON user_settings    TO authenticated;
+GRANT SELECT, INSERT,         DELETE ON household_shares TO authenticated;
+
+GRANT USAGE, SELECT ON SEQUENCE households_id_seq       TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE meters_id_seq           TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE devices_id_seq          TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE readings_id_seq         TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE household_shares_id_seq TO authenticated;
+
+-- Vynúti reload PostgREST schema cache, aby grants fungovali okamžite.
+NOTIFY pgrst, 'reload schema';
+
+-- =====================================================
+-- Hotovo. Po spustení by všetky CREATE/DROP/GRANT mali prejsť bez chyby.
 -- =====================================================
