@@ -12,6 +12,7 @@ Webová aplikácia na sledovanie spotreby elektriny, vody a plynu (s podporou fo
 - 🔌 Podpora výmeny meračov so zachovaním kontinuity spotreby
 - ☁️ Cloud sync cez Supabase (multi-device)
 - 🔐 Email + heslo prihlasovanie
+- 🤝 Read-only zdieľanie domov medzi účtami cez jednorazový kód
 - 🌗 Tmavý dizajn
 
 ## Tech stack
@@ -52,7 +53,12 @@ Po pushnutí do `main` branch:
 
 ## Konfigurácia Supabase
 
-Schéma tabuliek je v `supabase/schema.sql`. Spusti v SQL Editore v Supabase projekte.
+V SQL Editore v Supabase projekte spusti **v tomto poradí**:
+
+1. `supabase/schema.sql` — vytvorí základné tabuľky (households, meters, devices, readings, user_settings), RLS politiky a granty.
+2. `supabase/phase_c_migration.sql` — pridá tabuľku `household_shares`, RPC funkcie `claim_share_code` + `get_user_emails`, prerobí RLS na split SELECT/mutate a doplní granty (Phase C — read-only zdieľanie).
+
+Oba skripty sú **idempotentné** — môžeš ich pustiť aj viackrát bez chyby.
 
 V `index.html` zmeň konštanty:
 
@@ -61,20 +67,33 @@ const SUPABASE_URL = 'https://...';
 const SUPABASE_ANON_KEY = '...';
 ```
 
+> ⚠️ **Pozor na GRANTs.** Tabuľky vytvorené cez SQL Editor (na rozdiel od Dashboard UI) nedostanú automaticky `GRANT ... TO authenticated`. Bez nich appka 403-uje na každý query, ale silently — vidíš len červený sync indikátor. Naše SQL skripty granty obsahujú; ak by si pridával vlastnú tabuľku, nezabudni na `GRANT SELECT, INSERT, UPDATE, DELETE ON tabulka TO authenticated;` a `GRANT USAGE, SELECT ON SEQUENCE tabulka_id_seq TO authenticated;`.
+
 ## Bezpečnosť
 
 - Anon key je verejný (štandard Supabase) — bezpečnosť zabezpečuje Row Level Security
 - Po vytvorení všetkých účtov **vypni nové registrácie** v Supabase: Authentication → Providers → Email → Disable new user signups
 - HTTPS je povinné v produkcii (Supabase auth cookies)
 
+## Zdieľanie domov (Phase C)
+
+Vlastník domu môže udeliť **read-only** prístup inému účtu cez jednorazový share kód:
+
+1. **Owner**: Nastavenia → Zdieľanie domov → pri svojom dome klikne `+ Pozvánka` → dostane kód typu `SHARE-7K2P-9X4M` → pošle ho recipientovi (Messenger / SMS / na papieri).
+2. **Recipient**: Nastavenia → Zdieľanie domov → vloží kód do políčka „Aktivovať" → potvrdí.
+3. Recipient po refreshe vidí dom v switcheri označený 🔒, s bannerom „Iba na čítanie · Vlastník: …" a so skrytými cenami v €. Mutácie (pridať odpočet, upraviť, zmazať) sú zablokované cez UI aj cez RLS.
+
+**Revoke:** Owner aj recipient môžu kedykoľvek zrušiť zdieľanie zo svojej strany v tej istej karte.
+
 ## Štruktúra repo
 
 ```
 .
-├── index.html           # Hlavná appka (single-file)
-├── .htaccess            # Apache config pre WebSupport (HTTPS, gzip, cache)
+├── index.html                       # Hlavná appka (single-file)
+├── .htaccess                        # Apache config pre WebSupport (HTTPS, gzip, cache)
 ├── supabase/
-│   └── schema.sql       # SQL na inicializáciu DB
+│   ├── schema.sql                   # Inicializácia DB (Phase B — cloud sync)
+│   └── phase_c_migration.sql        # Doplnok pre Phase C (read-only zdieľanie)
 ├── README.md
 └── .gitignore
 ```
