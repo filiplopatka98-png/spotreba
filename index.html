@@ -15,11 +15,11 @@
   font-src 'self' https://fonts.gstatic.com;
   worker-src 'self' blob:;
   manifest-src 'self';
-  frame-ancestors 'none';
   form-action 'self';
   base-uri 'self';
   object-src 'none';
 ">
+<!-- Pozn: frame-ancestors je v .htaccess (HTTP header), v <meta> je ignorovaný. -->
 
 <!-- SEO: súkromná appka, zakázať indexovanie -->
 <meta name="robots" content="noindex, nofollow, noarchive">
@@ -76,7 +76,7 @@
     --line-2: #383d44;
     --ink: #f4ede4;
     --ink-2: #b8b3a9;
-    --ink-3: #75726c;
+    --ink-3: #8d8a85;  /* WCAG AA: 5.13:1 contrast on --bg-2; bumped from #75726c (3.74:1) */
     --accent: #c8ff3e;
     --warn: #ffb547;
     --bad: #ff5d5d;
