@@ -87,6 +87,23 @@ Vlastník domu môže udeliť **read-only** prístup inému účtu cez jednorazo
 
 **Revoke:** Owner aj recipient môžu kedykoľvek zrušiť zdieľanie zo svojej strany v tej istej karte.
 
+## Excel import/export
+
+V **Nastavenia → Záloha dát**:
+
+- **Export Excel** stiahne `.xlsx` aktívneho domu — header `mesiac | <meradlo> | <meradlo> | …`, jeden mesiac = jeden riadok, pre každé enabled meradlo dvojica stĺpcov: **stav** (počítadlo na 1. v mesiaci) + **spotreba** (delta voči predošlému mesiacu, replacement-aware).
+
+  Stĺpce sú dynamické — dom bez FV ich nezahrnie. Dátum je v slovenskom formáte `1. januára 2025`. Filename: `spotreba-<dom_nazov>-YYYYMMDD.xlsx`.
+
+- **Import Excel** prečíta súbor v rovnakom formáte. Pred reálnym zápisom zobrazí preview:
+  - počet nových odpočtov
+  - zoznam konfliktov (existujúce odpočty pre rovnaké meradlo + dátum)
+  - detekované výmeny meračov (`stav` poklesne medzi mesiacmi → automaticky vytvorí nový `device` záznam s odhadnutým initial/final value)
+
+  Voľba: **Prepísať konflikty** | **Ponechať pôvodné** | **Zrušiť**.
+
+  Po importe skontroluj presné hodnoty výmen v Settings → Výmena merača.
+
 ## Štruktúra repo
 
 ```

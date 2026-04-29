@@ -43,6 +43,16 @@ HTTP server je nutný (nie `file://`) kvôli CORS pri Supabase auth cookies.
 - Share lifecycle: owner generuje single-use kód v `household_shares` (`code` set, `recipient_id NULL`); recipient claim cez RPC `claim_share_code(p_code)` (atomic, SECURITY DEFINER); revoke = DELETE z oboch strán.
 - Owner email pre banner sa resolvuje cez RPC `get_user_emails(p_ids[])` (SECURITY DEFINER, server-side filtruje len users s ktorými existuje share vzťah).
 
+## Excel import/export
+
+- **SheetJS** (`xlsx@0.18.5`) lazy-loaded z CDN pri prvom kliku na Export/Import (cache-uje SW).
+- Header dynamický podľa `enabled_meters` aktívneho domu, fixed order: `plyn → voda → elektrina → fv-predaj`. Každé meradlo = pár stĺpcov (stav, spotreba).
+- Slovak date utils: `SK_MONTHS_GEN` (genitive: januára), `SK_MONTHS_NOM` (nominative: január), `parseDateMaybe()` (4 stratégie: Date object, Excel serial, Slovak string, ISO), `fmtDateSk()`.
+- **Replacement detection** pri importe: ak `current_stav < previous_stav AND spotreba > 0`, vytvorí nový `device` záznam s odhadnutým initial=0/final=prev_stav. Užívateľ ich má fine-tune-núť v Settings → Výmena merača.
+- **Conflict detection**: pre každý import-row skontroluje `db.readings.where('[meterPk+date]')`; preview zobrazí počet + zoznam konfliktov, jedna voľba pre všetky (Prepísať / Ponechať / Zrušiť).
+- Read-only domy blokujú import cez `ensureWritable()`; export funguje aj na zdieľaných.
+- Export filename: `spotreba-<dom>-YYYYMMDD.xlsx`. Datum write-uje ako Slovak string (nie Date object) — bit-perfect roundtrip.
+
 ## Supabase gotchas (read this!)
 
 1. **GRANTs**: tabuľky vytvorené cez SQL Editor (`CREATE TABLE`) **nedostávajú auto-grant** pre `authenticated` rolu. Bez `GRANT SELECT, INSERT, UPDATE, DELETE ON tabulka TO authenticated;` všetky requesty 403-ujú. Aj sequences treba: `GRANT USAGE, SELECT ON SEQUENCE tabulka_id_seq TO authenticated;`. Naše SQL skripty to obsahujú — pri pridávaní novej tabuľky NEZABUDNI.
@@ -63,6 +73,7 @@ HTTP server je nutný (nie `file://`) kvôli CORS pri Supabase auth cookies.
 | Household switcher render | ~3950 |
 | Settings tab HTML | ~1290 |
 | Phase C JS (sharing, RO mode) | ~4310–4520 |
+| Excel import/export modul | ~4970–5300 |
 | Event handlery (button bindings) | ~4540+ |
 | `startApp` | ~4670 |
 
