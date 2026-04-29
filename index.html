@@ -9,10 +9,10 @@
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com;
-  connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://unpkg.com https://tessdata.projectnaptha.com https://fonts.googleapis.com https://fonts.gstatic.com;
+  connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://unpkg.com https://tessdata.projectnaptha.com;
   img-src 'self' data: blob:;
-  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-  font-src 'self' https://fonts.gstatic.com;
+  style-src 'self' 'unsafe-inline';
+  font-src 'self';
   worker-src 'self' blob:;
   manifest-src 'self';
   form-action 'self';
@@ -42,9 +42,25 @@
 <meta name="twitter:description" content="Súkromný tracker spotreby elektriny, vody a plynu.">
 <meta name="twitter:image" content="https://filiplopatka98-png.github.io/spotreba/icon-512.png">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Žiadne Google Fonts — používame system stack (-apple-system / SF Pro / Inter / system-ui).
+     Šetrí render-blocking CSS request a robí appku rýchlejšiu + natívnejšiu na iOS. -->
+
+<!-- Theme apply BEFORE first paint (FOUC-free) — sync localStorage read -->
+<script>
+  (function() {
+    try {
+      var mode = localStorage.getItem('spotreba-theme') || 'system';
+      var resolved = mode;
+      if (mode === 'system') {
+        resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-theme', resolved);
+      document.documentElement.setAttribute('data-theme-mode', mode);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  })();
+</script>
 <!-- Eager: Dexie + Supabase potrebné pri startApp pre auth + lokálnu DB -->
 <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"
         integrity="sha384-vG8R9Zn5YZHCeXt9gLNp8MnsUCqmIy7HPxhdOdLGa/30/c8uZXFrrN0iKGID/ZvC"
@@ -55,7 +71,7 @@
 <!-- Chart.js a Tesseract.js sa lazy-loadujú on-demand (viď loadChartJs/loadTesseract). -->
 <!-- Šetrí ~300KB initial download. Chart.js sa pre-loadne hneď po auth pre rýchly prvý render. -->
 <link rel="manifest" href="./manifest.json">
-<meta name="theme-color" content="#0e0f10">
+<meta name="theme-color" content="#f2f2f7" id="metaThemeColor">
 
 <!-- Favicons -->
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
@@ -68,23 +84,48 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Spotreba">
 <style>
-  :root {
-    --bg: #0e0f10;
-    --bg-2: #15171a;
-    --bg-3: #1d2024;
-    --line: #2a2e34;
-    --line-2: #383d44;
-    --ink: #f4ede4;
-    --ink-2: #b8b3a9;
-    --ink-3: #8d8a85;  /* WCAG AA: 5.13:1 contrast on --bg-2; bumped from #75726c (3.74:1) */
-    --accent: #c8ff3e;
-    --warn: #ffb547;
-    --bad: #ff5d5d;
-    --good: #4ade80;
-    --elec-in: #ffb547;
-    --elec-out: #c8ff3e;
-    --water: #4cc9f0;
-    --gas: #f87171;
+  /* iOS LIGHT (default) — applied when [data-theme="light"] or no theme set */
+  :root, [data-theme="light"] {
+    --bg: #f2f2f7;            /* iOS systemGray6 */
+    --bg-2: #ffffff;          /* card background */
+    --bg-3: #e5e5ea;          /* hover/pressed */
+    --line: rgba(60, 60, 67, 0.18);
+    --line-2: rgba(60, 60, 67, 0.36);
+    --ink: #1c1c1e;
+    --ink-2: #3c3c43;
+    --ink-3: #6d6d72;         /* slightly darkened from iOS #8e8e93 for AA contrast */
+    --accent: #34c759;        /* SF Green */
+    --accent-2: #2eb850;
+    --warn: #ff9500;          /* SF Orange */
+    --bad: #ff3b30;           /* SF Red — destructive only */
+    --good: #34c759;
+    --elec-in: #ff9500;       /* electricity from grid → SF Orange */
+    --elec-out: #00c7be;      /* FV sell → SF Mint (was lime, freed for accent) */
+    --water: #007aff;         /* SF Blue */
+    --gas: #ff6b6b;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  }
+
+  /* iOS DARK */
+  [data-theme="dark"] {
+    --bg: #000000;
+    --bg-2: #1c1c1e;
+    --bg-3: #2c2c2e;
+    --line: rgba(84, 84, 88, 0.55);
+    --line-2: rgba(84, 84, 88, 0.85);
+    --ink: #ffffff;
+    --ink-2: #ebebf5;
+    --ink-3: #98989f;
+    --accent: #30d158;
+    --accent-2: #28b04a;
+    --warn: #ff9f0a;
+    --bad: #ff453a;
+    --good: #30d158;
+    --elec-in: #ff9f0a;
+    --elec-out: #66d4cf;
+    --water: #0a84ff;
+    --gas: #ff7b7b;
+    --shadow-card: none;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -92,9 +133,11 @@
   html, body {
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Inter', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Helvetica Neue", system-ui, sans-serif;
     font-size: 15px;
     line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
   }
@@ -127,7 +170,7 @@
     gap: 2px;
   }
   .brand h1 {
-    font-family: 'Fraunces', serif;
+    font-family: inherit;
     font-weight: 400;
     font-size: 38px;
     letter-spacing: -0.02em;
@@ -143,7 +186,7 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     margin-top: 6px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .header-actions {
     display: flex;
@@ -152,28 +195,28 @@
   .btn {
     appearance: none;
     border: 1px solid var(--line-2);
-    background: transparent;
+    background: var(--bg-2);
     color: var(--ink);
-    padding: 9px 16px;
-    border-radius: 6px;
-    font-family: 'Inter', sans-serif;
-    font-size: 13px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s;
   }
-  .btn:hover { border-color: var(--ink); background: var(--bg-2); }
+  .btn:hover { background: var(--bg-3); }
   .btn-primary {
     background: var(--accent);
-    color: #0a0a0a;
+    color: #ffffff;
     border-color: var(--accent);
     font-weight: 600;
   }
-  .btn-primary:hover { background: #b6e836; border-color: #b6e836; }
-  .btn-ghost { border-color: transparent; color: var(--ink-2); }
-  .btn-ghost:hover { color: var(--ink); border-color: var(--line-2); }
-  .btn-danger { color: var(--bad); }
-  .btn-danger:hover { border-color: var(--bad); }
+  .btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .btn-ghost { border-color: transparent; background: transparent; color: var(--accent); }
+  .btn-ghost:hover { color: var(--accent-2); background: var(--bg-3); }
+  .btn-danger { color: var(--bad); border-color: transparent; background: transparent; }
+  .btn-danger:hover { background: rgba(255, 59, 48, 0.1); }
 
   /* TABS */
   .tabs {
@@ -213,17 +256,18 @@
   }
   .meter-card {
     background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: 12px;
+    border: 0.5px solid var(--line);
+    border-radius: 14px;
     padding: 20px;
     position: relative;
     overflow: hidden;
     cursor: pointer;
     transition: all 0.2s;
+    box-shadow: var(--shadow-card);
   }
   .meter-card:hover {
-    border-color: var(--line-2);
-    transform: translateY(-2px);
+    background: var(--bg-3);
+    transform: translateY(-1px);
   }
   .meter-card .meter-bar {
     position: absolute;
@@ -240,11 +284,11 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     margin-bottom: 12px;
   }
   .meter-value {
-    font-family: 'Fraunces', serif;
+    font-family: inherit;
     font-size: 42px;
     font-weight: 400;
     letter-spacing: -0.02em;
@@ -254,7 +298,7 @@
   .meter-unit {
     font-size: 14px;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .meter-meta {
     display: flex;
@@ -265,7 +309,7 @@
     border-top: 1px solid var(--line);
     font-size: 12px;
     color: var(--ink-2);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .delta {
     display: inline-flex;
@@ -287,7 +331,7 @@
     margin: 0 0 16px;
   }
   .section-title h2 {
-    font-family: 'Fraunces', serif;
+    font-family: inherit;
     font-weight: 400;
     font-size: 24px;
     letter-spacing: -0.01em;
@@ -295,17 +339,18 @@
   .section-title .hint {
     font-size: 12px;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
 
   /* CARDS */
   .card {
     background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 24px;
+    border: 0.5px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: var(--shadow-card);
   }
-  .card + .card { margin-top: 16px; }
+  .card + .card { margin-top: 12px; }
 
   /* CHART AREA */
   .chart-tools {
@@ -343,7 +388,7 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     font-size: 13px;
   }
   th, td {
@@ -408,7 +453,7 @@
   }
   @keyframes slideUp { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   .modal h3 {
-    font-family: 'Fraunces', serif;
+    font-family: inherit;
     font-weight: 400;
     font-size: 24px;
     margin-bottom: 6px;
@@ -428,7 +473,7 @@
     letter-spacing: 0.08em;
     color: var(--ink-3);
     margin-bottom: 6px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .field input, .field select, .field textarea {
     width: 100%;
@@ -437,7 +482,7 @@
     color: var(--ink);
     padding: 10px 12px;
     border-radius: 6px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     font-size: 14px;
   }
   .field input:focus, .field select:focus {
@@ -448,7 +493,7 @@
     font-size: 12px;
     color: var(--ink-3);
     margin-top: 6px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .field-hint.warn { color: var(--warn); }
   .field-hint.bad { color: var(--bad); }
@@ -492,7 +537,7 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .meter-pick .pick-name {
     font-weight: 600;
@@ -519,7 +564,7 @@
   .anomaly.severe { border-left-color: var(--bad); }
   .anomaly-text { font-size: 13px; flex: 1; }
   .anomaly-text .a-title { font-weight: 600; margin-bottom: 2px; }
-  .anomaly-text .a-detail { color: var(--ink-2); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+  .anomaly-text .a-detail { color: var(--ink-2); font-size: 12px; font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
   .anomaly-empty {
     padding: 28px;
     text-align: center;
@@ -663,7 +708,7 @@
       align-items: start;
     }
     .table-wrap td { display: block; border: none; padding: 0; line-height: 1.4; }
-    .table-wrap td:nth-child(1) { grid-column: 2; grid-row: 1; font-size: 12px; color: var(--ink-3); justify-self: end; font-family: 'JetBrains Mono', monospace; }
+    .table-wrap td:nth-child(1) { grid-column: 2; grid-row: 1; font-size: 12px; color: var(--ink-3); justify-self: end; font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
     .table-wrap td:nth-child(2) { grid-column: 1; grid-row: 1; }
     .table-wrap td:nth-child(3) { grid-column: 1; grid-row: 2; font-size: 18px; font-weight: 500; color: var(--ink); }
     .table-wrap td:nth-child(4) { grid-column: 2; grid-row: 2; font-size: 13px; color: var(--ink-2); justify-self: end; align-self: center; }
@@ -860,7 +905,7 @@
   .hh-item .hh-item-addr {
     font-size: 11px;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .hh-divider {
     height: 1px;
@@ -889,7 +934,7 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--accent);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     margin-bottom: 10px;
   }
   .meter-checkbox-grid {
@@ -917,7 +962,7 @@
   .meter-check input { accent-color: var(--accent); cursor: pointer; }
   .meter-check .mc-info { display: flex; flex-direction: column; }
   .meter-check .mc-name { font-size: 13px; font-weight: 500; }
-  .meter-check .mc-unit { font-size: 11px; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; }
+  .meter-check .mc-unit { font-size: 11px; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
 
   /* HOUSEHOLD MGMT IN SETTINGS */
   .hh-list-item {
@@ -931,7 +976,7 @@
   }
   .hh-list-item .hh-li-info { display: flex; flex-direction: column; gap: 2px; }
   .hh-list-item .hh-li-name { font-weight: 500; font-size: 14px; }
-  .hh-list-item .hh-li-meta { font-size: 12px; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; }
+  .hh-list-item .hh-li-meta { font-size: 12px; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
   .hh-list-item .hh-li-actions { display: flex; gap: 4px; }
 
   /* HISTORY TOOLBAR */
@@ -1055,7 +1100,7 @@
     max-width: 420px;
   }
   .auth-card h1 {
-    font-family: 'Fraunces', serif;
+    font-family: inherit;
     font-weight: 400;
     font-size: 36px;
     letter-spacing: -0.02em;
@@ -1070,7 +1115,7 @@
     font-size: 13px;
     color: var(--ink-3);
     margin-bottom: 28px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .auth-tabs {
     display: flex;
@@ -1122,7 +1167,7 @@
     text-align: center;
     font-size: 12px;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
 
   /* SYNC INDICATOR */
@@ -1132,7 +1177,7 @@
     gap: 6px;
     font-size: 12px;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     padding: 6px 10px;
     border-radius: 16px;
     background: var(--bg-2);
@@ -1161,7 +1206,7 @@
   .user-info {
     font-size: 12px;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     margin-bottom: 8px;
   }
 
@@ -1230,7 +1275,7 @@
     pointer-events: none;
   }
   .ocr-status {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     font-size: 12px;
     color: var(--ink-2);
     margin-top: 10px;
@@ -1255,7 +1300,7 @@
   .ocr-help {
     font-size: 11px;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     margin-top: 8px;
   }
 
@@ -1272,7 +1317,7 @@
   }
   .heatmap-label {
     font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     color: var(--ink-3);
     display: flex;
     align-items: center;
@@ -1291,7 +1336,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     font-size: 10px;
     color: rgba(0,0,0,0.6);
     font-weight: 600;
@@ -1313,7 +1358,7 @@
     margin-top: 16px;
     font-size: 11px;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .heatmap-legend-cell {
     width: 16px;
@@ -1326,7 +1371,7 @@
     color: var(--ink-3);
     font-size: 11px;
     margin-top: 2px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
   .cost strong {
     color: var(--ink);
@@ -1358,17 +1403,17 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-3);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     margin-bottom: 6px;
   }
   .year-cell .y-val {
-    font-family: 'Fraunces', serif;
+    font-family: inherit;
     font-size: 26px;
   }
   .year-cell .y-detail {
     font-size: 12px;
     color: var(--ink-2);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     margin-top: 4px;
   }
 
@@ -1419,7 +1464,7 @@
   }
   .share-row-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
   .share-row-name { font-weight: 500; font-size: 14px; }
-  .share-row-meta { font-size: 11px; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; }
+  .share-row-meta { font-size: 11px; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
   .share-claim {
     display: flex;
     gap: 8px;
@@ -1433,7 +1478,7 @@
     border: 1px solid var(--line);
     border-radius: 6px;
     color: var(--ink);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     font-size: 13px;
   }
   .share-empty { font-size: 13px; color: var(--ink-3); padding: 10px 0; }
@@ -1444,12 +1489,43 @@
     border: 1px dashed var(--accent);
     border-radius: 8px;
     text-align: center;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
     font-size: 22px;
     letter-spacing: 0.1em;
     color: var(--accent);
     user-select: all;
   }
+
+  /* Theme segmented control (iOS UISegmentedControl pattern) */
+  .theme-segment {
+    display: flex;
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+    border: 0.5px solid var(--line);
+  }
+  .theme-seg {
+    flex: 1;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--ink-2);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .theme-seg:hover { color: var(--ink); }
+  .theme-seg.active {
+    background: var(--bg-2);
+    color: var(--ink);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+  [data-theme="dark"] .theme-seg.active { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
 
   /* Spinner — reusable */
   .spinner {
@@ -1491,7 +1567,7 @@
     background: var(--bg-2);
   }
   .empty-state .es-emoji { font-size: 36px; opacity: 0.6; display: block; margin-bottom: 12px; }
-  .empty-state .es-title { font-size: 16px; color: var(--ink); margin-bottom: 6px; font-family: 'Fraunces', serif; font-weight: 400; }
+  .empty-state .es-title { font-size: 16px; color: var(--ink); margin-bottom: 6px; font-family: inherit; font-weight: 400; }
   .empty-state .es-desc { font-size: 13px; line-height: 1.5; max-width: 360px; margin: 0 auto 14px; }
 
   /* PWA — update banner */
@@ -1725,7 +1801,19 @@
     </div>
 
     <div class="card">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Účet a synchronizácia</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Vzhľad</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 14px;">
+        Téma sa aplikuje okamžite. „Systém" sleduje nastavenie tvojho zariadenia.
+      </p>
+      <div class="theme-segment" role="radiogroup" aria-label="Téma">
+        <button class="theme-seg" data-theme-mode="light" role="radio">Svetlá</button>
+        <button class="theme-seg" data-theme-mode="dark" role="radio">Tmavá</button>
+        <button class="theme-seg" data-theme-mode="system" role="radio">Systém</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Účet a synchronizácia</h3>
       <div class="user-info" id="userInfo">—</div>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Tvoje dáta sú synchronizované do cloudu (Supabase) a dostupné na všetkých zariadeniach po prihlásení.
@@ -1737,7 +1825,7 @@
     </div>
 
     <div class="card">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Domácnosti</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Domácnosti</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Sleduj viacero domov v jednej appke. Každý dom má vlastné meradlá, odpočty a tarify.
       </p>
@@ -1746,7 +1834,7 @@
     </div>
 
     <div class="card">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Zdieľanie domov</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Zdieľanie domov</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Daj prístup iným k tvojmu domu (iba na čítanie) cez jednorazový kód, alebo si zaregistruj kód, ktorý ti niekto poslal.
       </p>
@@ -1760,7 +1848,7 @@
     </div>
 
     <div class="card">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Prahy upozornení</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Prahy upozornení</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Ak je mesačná spotreba o viac než X % vyššia oproti priemeru rovnakého mesiaca z predchádzajúcich rokov, vznikne upozornenie.
       </p>
@@ -1776,7 +1864,7 @@
     </div>
 
     <div class="card">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Náklady (voliteľné)</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Náklady (voliteľné)</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Cena za jednotku — dashboard a karty potom ukážu odhad nákladov v €. Nechaj prázdne ak nepotrebuješ.
       </p>
@@ -1785,7 +1873,7 @@
     </div>
 
     <div class="card">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Výmena merača</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Výmena merača</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Keď ti vymenia fyzický merač, pridaj výmenu — zachová sa kontinuita spotreby.
       </p>
@@ -1793,7 +1881,7 @@
     </div>
 
     <div class="card hidden" id="installCard">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Inštalácia</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Inštalácia</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Pridaj appku na plochu pre rýchly prístup ako natívna appka (offline funguje).
       </p>
@@ -1801,7 +1889,7 @@
     </div>
 
     <div class="card">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Záloha dát</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Záloha dát</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         <strong>JSON</strong> = univerzálny full-backup (všetko, vrátane settings).
         <strong>Excel</strong> = human-friendly, len odpočty aktívneho domu (mesačne).
@@ -1816,7 +1904,7 @@
     </div>
 
     <div class="card">
-      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Reset</h3>
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Reset</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Pred resetom si urob export — dáta nepôjde obnoviť.
       </p>
@@ -1954,11 +2042,11 @@
     <h3>Nový odpočet</h3>
     <p class="modal-sub">Zapíš stav počítadla — appka si dopočíta spotrebu.</p>
 
-    <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; display: block; margin-bottom: 8px;">Meradlo</label>
+    <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; display: block; margin-bottom: 8px;">Meradlo</label>
     <div class="meter-picker" id="addMeterPicker"></div>
 
     <div class="ocr-section">
-      <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; display: block; margin-bottom: 8px;">Foto merača (voliteľné)</label>
+      <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; display: block; margin-bottom: 8px;">Foto merača (voliteľné)</label>
       <div class="ocr-toggle">
         <button type="button" class="ocr-pick-btn" id="ocrCamera">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -5358,7 +5446,7 @@ async function handleExcelImportFile(file) {
 
     if (preview.conflicts.length > 0) {
       html += `<p>⚠ <strong>${preview.conflicts.length}</strong> konfliktov (rovnaké meradlo + dátum):</p>
-        <div style="max-height:160px; overflow-y:auto; background: var(--bg); padding: 8px; border-radius:6px; font-size:12px; font-family: 'JetBrains Mono', monospace; margin-bottom: 8px;">`;
+        <div style="max-height:160px; overflow-y:auto; background: var(--bg); padding: 8px; border-radius:6px; font-size:12px; font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; margin-bottom: 8px;">`;
       for (const c of preview.conflicts.slice(0, 30)) {
         html += `<div>• ${fmtDate(c.date)} ${escHtml(c.meterName)}: ${fmtNum(c.oldValue,0)} → ${fmtNum(c.value,0)} ${escHtml(c.meterUnit)}</div>`;
       }
@@ -5560,6 +5648,61 @@ async function exportExcel() {
 }
 
 /* =============================================================
+   THEME — light / dark / system + persist
+   ============================================================= */
+
+const THEME_KEY = 'spotreba-theme';
+const THEME_BG = { light: '#f2f2f7', dark: '#000000' };
+
+function resolveTheme(mode) {
+  if (mode === 'system') {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return mode;
+}
+
+function applyTheme(mode) {
+  if (!['light', 'dark', 'system'].includes(mode)) mode = 'system';
+  const resolved = resolveTheme(mode);
+  document.documentElement.setAttribute('data-theme', resolved);
+  document.documentElement.setAttribute('data-theme-mode', mode);
+  // Update meta theme-color (mobile browser chrome)
+  const metaTC = document.getElementById('metaThemeColor');
+  if (metaTC) metaTC.setAttribute('content', THEME_BG[resolved]);
+  // Persist to localStorage immediately (FOUC-free on next load)
+  try { localStorage.setItem(THEME_KEY, mode); } catch (e) {}
+  // Also persist to Dexie for cross-device cloud-sync (best-effort)
+  if (typeof db !== 'undefined' && db.settings) {
+    db.settings.put({ key: THEME_KEY, value: mode }).catch(() => {});
+  }
+  // Update segmented control if present
+  document.querySelectorAll('.theme-seg').forEach(b => {
+    b.classList.toggle('active', b.dataset.themeMode === mode);
+  });
+}
+
+// React to OS dark/light change while in 'system' mode
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const mode = document.documentElement.getAttribute('data-theme-mode') || 'system';
+    if (mode === 'system') applyTheme('system');
+  });
+}
+
+// Apply current mode on load (in case anything changed after the FOUC-free script)
+window.addEventListener('DOMContentLoaded', () => {
+  const mode = document.documentElement.getAttribute('data-theme-mode') || localStorage.getItem(THEME_KEY) || 'system';
+  applyTheme(mode);
+});
+
+// Wire segmented control
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.theme-seg');
+  if (!btn) return;
+  applyTheme(btn.dataset.themeMode);
+});
+
+/* =============================================================
    PWA — service worker registration + update prompt
    ============================================================= */
 
@@ -5718,11 +5861,11 @@ async function startApp() {
   } catch (err) {
     console.error('Init failed:', err);
     document.body.innerHTML = `
-      <div style="max-width: 600px; margin: 80px auto; padding: 32px; font-family: Inter, sans-serif; color: #f4ede4; background: #15171a; border: 1px solid #2a2e34; border-radius: 12px;">
-        <h2 style="font-family: Fraunces, serif; font-weight: 400; font-size: 28px; margin-bottom: 12px;">Niečo sa pokazilo</h2>
-        <p style="margin-bottom: 12px; color: #b8b3a9;">Inicializácia appky zlyhala.</p>
-        <p style="margin-bottom: 20px; padding: 12px; background: #0e0f10; border-radius: 6px; font-family: monospace; font-size: 13px; color: #ff5d5d;">${err.message}</p>
-        <button id="btnHardReset" style="margin-top: 24px; background: #ff5d5d; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; font-family: inherit;">Tvrdý reset (zmaže obe lokálne DB)</button>
+      <div style="max-width: 600px; margin: 80px auto; padding: 32px; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: #1c1c1e; background: #ffffff; border: 1px solid rgba(0,0,0,0.1); border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+        <h2 style="font-weight: 700; font-size: 28px; margin-bottom: 12px; letter-spacing: -0.02em;">Niečo sa pokazilo</h2>
+        <p style="margin-bottom: 12px; color: #3c3c43;">Inicializácia appky zlyhala.</p>
+        <p style="margin-bottom: 20px; padding: 12px; background: #f2f2f7; border-radius: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 13px; color: #ff3b30;">${err.message}</p>
+        <button id="btnHardReset" style="margin-top: 24px; background: #ff3b30; color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; cursor: pointer; font-family: inherit;">Tvrdý reset (zmaže obe lokálne DB)</button>
       </div>
     `;
     document.getElementById('btnHardReset').addEventListener('click', async () => {

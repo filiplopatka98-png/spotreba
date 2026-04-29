@@ -15,7 +15,7 @@ Webová aplikácia na sledovanie spotreby elektriny, vody a plynu (s podporou fo
 - 🤝 Read-only zdieľanie domov medzi účtami cez jednorazový kód
 - 📵 PWA — funguje plne offline (service worker), inštalovateľná na mobile
 - 📑 Excel import/export so zachovaním pôvodného formátu (per-household stĺpce, detekcia výmeny merača)
-- 🌗 Tmavý dizajn
+- 🍏 iOS-style dizajn s prepínačom Svetlá / Tmavá / Systém (system fonts, žiadne Google Fonts)
 
 ## Tech stack
 

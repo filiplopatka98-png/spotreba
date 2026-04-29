@@ -20,3 +20,4 @@ node_modules/
 
 # Local working docs (specs, plans, brainstorming) — not deployed
 docs/superpowers/
+.superpowers/
