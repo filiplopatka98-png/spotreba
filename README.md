@@ -92,6 +92,12 @@ Vlastník domu môže udeliť **read-only** prístup inému účtu cez jednorazo
 .
 ├── index.html                       # Hlavná appka (single-file)
 ├── service-worker.js                # PWA service worker (cache app shell + libs)
+├── manifest.json                    # PWA manifest (icons, install metadata)
+├── icon.svg                         # Source ikona (512×512, lime "S" na dark)
+├── icon-512.png                     # PWA: any + maskable
+├── icon-192.png                     # PWA: any
+├── icon-180.png                     # iOS apple-touch-icon
+├── icon-32.png, icon-16.png         # Browser favicony
 ├── .htaccess                        # Apache config pre WebSupport (HTTPS, gzip, cache)
 ├── supabase/
 │   ├── schema.sql                   # Inicializácia DB (Phase B — cloud sync)

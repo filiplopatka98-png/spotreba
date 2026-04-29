@@ -11,10 +11,19 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
-<link rel="manifest" href="data:application/manifest+json;base64,ew0KICAibmFtZSI6ICJTcG90cmViYSDigJQgVHJhY2tlciBlbmVyZ2nDrSIsDQogICJzaG9ydF9uYW1lIjogIlNwb3RyZWJhIiwNCiAgInN0YXJ0X3VybCI6ICIuIiwNCiAgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsDQogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMwZTBmMTAiLA0KICAidGhlbWVfY29sb3IiOiAiIzBlMGYxMCIsDQogICJkZXNjcmlwdGlvbiI6ICJUcmFja2VyIHNwb3RyZWJ5IGVuZXJnaWkiLA0KICAiaWNvbnMiOiBbXQ0KfQ==">
+<link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#0e0f10">
+
+<!-- Favicons -->
+<link rel="icon" type="image/svg+xml" href="./icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="./icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./icon-16.png">
+
+<!-- iOS / Safari home screen -->
+<link rel="apple-touch-icon" href="./icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Spotreba">
 <style>
   :root {
     --bg: #0e0f10;
@@ -513,14 +522,219 @@
   .device-banner svg { flex-shrink: 0; }
 
   /* RESPONSIVE */
+  /* =============================================================
+     MOBILE-FIRST OVERRIDES (≤720px)
+     Bottom nav, FAB, history-as-cards, sheet modaly, väčšie touch targety
+     ============================================================= */
   @media (max-width: 720px) {
-    .app { padding: 20px 14px 60px; }
-    header { flex-direction: column; align-items: flex-start; gap: 16px; }
-    .brand h1 { font-size: 30px; }
-    .meter-value { font-size: 34px; }
+    .app { padding: 16px 14px 90px; }
+
+    /* HEADER — stack vertikálne, schovať nepotrebné tlačidlá */
+    header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+      padding-bottom: 12px;
+    }
+    .brand { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .brand h1 { font-size: 24px; }
+    .brand .sub { font-size: 11px; }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .sync-indicator { padding: 6px 8px; }
+    .sync-indicator #syncText { display: none; }
+    /* Tieto tlačidlá v hlavičke nedávajú zmysel na mobile */
+    #btnImport, #btnExport, #btnAddTop { display: none; }
+    /* Switcher zaberie celú šírku */
+    .household-switcher { flex: 1; margin-right: 0; }
+    .hh-button {
+      width: 100%;
+      justify-content: space-between;
+      padding: 12px 14px;
+      min-height: 44px;
+      font-size: 14px;
+    }
+    .hh-dropdown { width: 100%; left: 0; right: 0; min-width: 0; }
+
+    /* TOP TABS schovať, BOTTOM TABS ukázať */
+    nav.tabs { display: none; }
+    .bottom-tabs {
+      display: flex !important;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-2);
+      border-top: 1px solid var(--line);
+      padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+      z-index: 50;
+      justify-content: space-around;
+    }
+
+    /* FAB */
+    .fab {
+      display: flex !important;
+      position: fixed;
+      bottom: calc(80px + env(safe-area-inset-bottom));
+      right: 16px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--bg-1);
+      border: none;
+      font-size: 32px;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+      z-index: 40;
+      font-weight: 300;
+      line-height: 1;
+    }
+    body.ro-shared .fab { display: none !important; }
+
+    /* HISTORY: tabuľka → karty (CSS only) */
+    .table-wrap {
+      border: none;
+      background: transparent;
+      padding: 0;
+      overflow: visible;
+    }
+    .table-wrap table { display: block; background: transparent; }
+    .table-wrap thead { display: none; }
+    .table-wrap tbody { display: block; }
+    .table-wrap tr {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-bottom: 8px;
+      background: var(--bg-2);
+      gap: 4px 12px;
+      align-items: start;
+    }
+    .table-wrap td { display: block; border: none; padding: 0; line-height: 1.4; }
+    .table-wrap td:nth-child(1) { grid-column: 2; grid-row: 1; font-size: 12px; color: var(--ink-3); justify-self: end; font-family: 'JetBrains Mono', monospace; }
+    .table-wrap td:nth-child(2) { grid-column: 1; grid-row: 1; }
+    .table-wrap td:nth-child(3) { grid-column: 1; grid-row: 2; font-size: 18px; font-weight: 500; color: var(--ink); }
+    .table-wrap td:nth-child(4) { grid-column: 2; grid-row: 2; font-size: 13px; color: var(--ink-2); justify-self: end; align-self: center; }
+    .table-wrap td:nth-child(5) { grid-column: 1 / -1; grid-row: 3; font-size: 12px; color: var(--ink-3); }
+    .table-wrap td:nth-child(5):empty { display: none; }
+    .table-wrap td:nth-child(6) { grid-column: 1 / -1; grid-row: 4; }
+    .row-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      padding-top: 8px;
+      margin-top: 4px;
+      border-top: 1px solid var(--line);
+    }
+    .row-btn { min-width: 40px; min-height: 40px; }
+
+    /* History toolbar */
+    .history-toolbar { flex-direction: column; align-items: stretch; }
+    .history-toolbar input, .history-toolbar select { width: 100%; min-height: 44px; font-size: 16px; }
+
+    /* MODAL → bottom sheet */
+    .modal-overlay { align-items: flex-end; }
+    .modal {
+      width: 100%;
+      max-width: none !important;
+      margin: 0;
+      border-radius: 16px 16px 0 0;
+      padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: slideUpSheet 0.25s ease;
+    }
+    @keyframes slideUpSheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+    /* FORM inputs: 44px+ touch targets, 16px font (zabraňuje iOS zoom) */
+    .field input, .field select, .field textarea {
+      min-height: 44px;
+      font-size: 16px;
+    }
+    .btn { min-height: 44px; padding: 10px 18px; font-size: 14px; }
+
+    /* DASHBOARD */
     .meter-picker { grid-template-columns: 1fr; }
+    .meters-grid { gap: 12px; }
+    .meter-card { padding: 16px; min-height: 96px; }
+    .meter-value { font-size: 30px; }
+    .meter-picker .pick { min-height: 44px; }
+
+    /* CHARTS */
+    .chart-wrap { height: 240px !important; }
+    .chart-tools { flex-direction: column; gap: 8px; }
+    .chart-tools select { width: 100%; min-height: 44px; font-size: 16px; }
+
+    /* SECTION TITLE */
+    .section-title { padding: 16px 0 8px; }
+    .section-title h2 { font-size: 18px; }
+
+    /* TABLE general (zvyšné tabuľky mimo history) */
     th, td { padding: 8px 10px; }
+
+    /* Update banner — preč z stredu, nech neprekrýva FAB */
+    .update-banner {
+      left: 16px;
+      right: 16px;
+      bottom: calc(150px + env(safe-area-inset-bottom));
+      transform: none;
+      justify-content: center;
+    }
+
+    /* Read-only banner */
+    .ro-banner { font-size: 12px; padding: 8px 12px; }
+
+    /* Settings cards: tighter */
+    #tab-settings .card { padding: 16px; }
+
+    /* Share row */
+    .share-row { flex-direction: column; align-items: stretch; gap: 8px; }
+    .share-claim { flex-direction: column; align-items: stretch; }
+    .share-claim input { width: 100%; min-height: 44px; font-size: 16px; }
+
+    /* Household switcher dropdown — väčšie touch targety */
+    .hh-item { padding: 14px 14px; min-height: 56px; }
+
+    /* Filter pills */
+    .filter-pills { gap: 8px; flex-wrap: wrap; }
+    .filter-pills .pill { min-height: 38px; padding: 8px 14px; }
   }
+
+  /* BOTTOM NAV — base styling (visible iba via @media mobile) */
+  .bottom-tabs { display: none; }
+  .bottom-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    padding: 6px 4px;
+    color: var(--ink-3);
+    font-family: inherit;
+    cursor: pointer;
+    min-height: 52px;
+    border-radius: 10px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .bottom-tab .bt-icon { font-size: 20px; line-height: 1; }
+  .bottom-tab .bt-label { font-size: 10px; line-height: 1; font-weight: 500; }
+  .bottom-tab.active { color: var(--accent); background: rgba(200, 255, 62, 0.08); }
+  .bottom-tab:hover:not(.active) { color: var(--ink-2); }
+
+  /* FAB — base hidden */
+  .fab { display: none; }
 
   /* SCROLLBAR */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -1484,6 +1698,25 @@
       <button class="btn" id="btnReplaceDevice">Zaznamenať výmenu merača</button>
     </div>
 
+    <div class="card hidden" id="installCard">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Inštalácia</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Pridaj appku na plochu pre rýchly prístup ako natívna appka (offline funguje).
+      </p>
+      <button class="btn btn-primary" id="btnInstallApp">Pridať na plochu</button>
+    </div>
+
+    <div class="card">
+      <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Záloha dát</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
+        Stiahni si všetky lokálne dáta ako JSON, alebo ich nahraj späť po reinštalácii.
+      </p>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn" id="btnExportSettings">Export JSON</button>
+        <button class="btn" id="btnImportSettings">Import JSON</button>
+      </div>
+    </div>
+
     <div class="card">
       <h3 style="font-family: Fraunces, serif; font-weight: 400; font-size: 18px; margin-bottom: 8px;">Reset</h3>
       <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
@@ -1492,6 +1725,19 @@
       <button class="btn btn-danger" id="btnReset">Vymazať všetky dáta</button>
     </div>
   </section>
+
+  <!-- BOTTOM NAVIGATION (mobile only) -->
+  <nav class="bottom-tabs" id="bottomTabs">
+    <button class="bottom-tab active" data-tab="dashboard"><span class="bt-icon">🏠</span><span class="bt-label">Domov</span></button>
+    <button class="bottom-tab" data-tab="history"><span class="bt-icon">📋</span><span class="bt-label">História</span></button>
+    <button class="bottom-tab" data-tab="charts"><span class="bt-icon">📊</span><span class="bt-label">Grafy</span></button>
+    <button class="bottom-tab" data-tab="heatmap"><span class="bt-icon">🔥</span><span class="bt-label">Heatmap</span></button>
+    <button class="bottom-tab" data-tab="anomalies"><span class="bt-icon">⚠️</span><span class="bt-label">Anomálie</span></button>
+    <button class="bottom-tab" data-tab="settings"><span class="bt-icon">⚙️</span><span class="bt-label">Nastav.</span></button>
+  </nav>
+
+  <!-- FAB — pridať odpočet (mobile only) -->
+  <button class="fab" id="fabAddReading" title="Pridať odpočet" aria-label="Pridať nový odpočet">+</button>
 
 </div>
 
@@ -4102,10 +4348,12 @@ async function renderDashboardCosts() {
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.tab, .bottom-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('section[id^="tab-"]').forEach(s => {
     s.classList.toggle('hidden', s.id !== 'tab-' + tab);
   });
+  // Scroll naspäť navrch keď user prepne tab (lepší UX hlavne na mobile)
+  window.scrollTo({ top: 0, behavior: 'instant' });
   if (tab === 'history') renderHistory();
   if (tab === 'charts') renderChart();
   if (tab === 'heatmap') renderHeatmap();
@@ -4585,8 +4833,38 @@ document.getElementById('btnShareCodeCopy').addEventListener('click', async () =
   }
 });
 
-document.querySelectorAll('.tab').forEach(t => {
+document.querySelectorAll('.tab, .bottom-tab').forEach(t => {
   t.addEventListener('click', () => switchTab(t.dataset.tab));
+});
+// FAB (mobile) — pridať odpočet
+const fabBtn = document.getElementById('fabAddReading');
+if (fabBtn) fabBtn.addEventListener('click', () => openAddModal());
+
+// Settings → Záloha dát: re-použí existujúce export/import handlery
+const btnExportSet = document.getElementById('btnExportSettings');
+const btnImportSet = document.getElementById('btnImportSettings');
+if (btnExportSet) btnExportSet.addEventListener('click', exportData);
+if (btnImportSet) btnImportSet.addEventListener('click', () => document.getElementById('fileImport').click());
+
+// PWA install prompt — Chrome/Edge fire 'beforeinstallprompt' keď spĺňa criteria
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const card = document.getElementById('installCard');
+  if (card) card.classList.remove('hidden');
+});
+const btnInstall = document.getElementById('btnInstallApp');
+if (btnInstall) btnInstall.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  document.getElementById('installCard').classList.add('hidden');
+  if (outcome === 'accepted') toast('Appka pridaná na plochu');
+});
+window.addEventListener('appinstalled', () => {
+  document.getElementById('installCard')?.classList.add('hidden');
 });
 document.getElementById('btnAddTop').addEventListener('click', () => openAddModal());
 document.getElementById('btnCancel').addEventListener('click', () => { document.getElementById('addModal').classList.add('hidden'); ocrReset(); });
