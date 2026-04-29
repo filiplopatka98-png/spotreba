@@ -31,6 +31,12 @@ DirectoryIndex index.html
         Header set Cache-Control "no-cache, no-store, must-revalidate"
     </FilesMatch>
 
+    # service-worker.js — nikdy necacheovať (inak browser nedetekuje update SW)
+    <FilesMatch "^service-worker\.js$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Service-Worker-Allowed "/"
+    </FilesMatch>
+
     # Bezpečnostné hlavičky
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"

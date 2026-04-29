@@ -13,6 +13,7 @@ Webová aplikácia na sledovanie spotreby elektriny, vody a plynu (s podporou fo
 - ☁️ Cloud sync cez Supabase (multi-device)
 - 🔐 Email + heslo prihlasovanie
 - 🤝 Read-only zdieľanie domov medzi účtami cez jednorazový kód
+- 📵 PWA — funguje plne offline (service worker), inštalovateľná na mobile
 - 🌗 Tmavý dizajn
 
 ## Tech stack
@@ -90,11 +91,13 @@ Vlastník domu môže udeliť **read-only** prístup inému účtu cez jednorazo
 ```
 .
 ├── index.html                       # Hlavná appka (single-file)
+├── service-worker.js                # PWA service worker (cache app shell + libs)
 ├── .htaccess                        # Apache config pre WebSupport (HTTPS, gzip, cache)
 ├── supabase/
 │   ├── schema.sql                   # Inicializácia DB (Phase B — cloud sync)
 │   └── phase_c_migration.sql        # Doplnok pre Phase C (read-only zdieľanie)
 ├── README.md
+├── CLAUDE.md                        # Inštrukcie pre AI helpera
 └── .gitignore
 ```
 

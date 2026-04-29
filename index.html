@@ -1194,9 +1194,46 @@
     user-select: all;
   }
 
+  /* PWA — update banner */
+  .update-banner {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: var(--bg-1);
+    padding: 10px 14px 10px 16px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 1000;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .update-banner .btn-update {
+    padding: 6px 12px;
+    font-size: 13px;
+    background: var(--bg-1);
+    color: var(--accent);
+    border: none;
+    border-radius: 999px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .update-banner .btn-update:hover { background: var(--bg-2); }
+  .update-banner.hidden { display: none; }
+
 </style>
 </head>
 <body>
+
+<!-- PWA UPDATE BANNER -->
+<div class="update-banner hidden" id="updateBanner" role="status">
+  ✨ Nová verzia dostupná
+  <button class="btn-update" id="btnUpdateNow">Aktualizovať</button>
+</div>
 
 <!-- AUTH SCREEN -->
 <div id="authScreen" class="auth-screen hidden">
@@ -4635,6 +4672,44 @@ window.addEventListener('mouseup', ocrPointerEnd);
 ocrWrap.addEventListener('touchstart', ocrPointerStart, { passive: false });
 ocrWrap.addEventListener('touchmove', ocrPointerMove, { passive: false });
 ocrWrap.addEventListener('touchend', ocrPointerEnd);
+
+/* =============================================================
+   PWA — service worker registration + update prompt
+   ============================================================= */
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js').then(reg => {
+      // Detekuj keď sa nainštaluje nová verzia v pozadí
+      reg.addEventListener('updatefound', () => {
+        const newSW = reg.installing;
+        if (!newSW) return;
+        newSW.addEventListener('statechange', () => {
+          // controller existuje = už beží stará verzia, takže toto je UPDATE (nie prvá inštalácia)
+          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+            const banner = document.getElementById('updateBanner');
+            if (!banner) return;
+            banner.classList.remove('hidden');
+            document.getElementById('btnUpdateNow').onclick = () => {
+              newSW.postMessage('skipWaiting');
+              // controllerchange handler nižšie spraví reload
+            };
+          }
+        });
+      });
+      // Hodinová kontrola (lacný HEAD ak 304)
+      setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+    }).catch(err => console.warn('SW register failed:', err));
+
+    // Keď nový SW prevezme kontrolu, reload presne raz
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      location.reload();
+    });
+  });
+}
 
 /* =============================================================
    INIT
