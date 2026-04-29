@@ -8,8 +8,8 @@
 <!-- Content Security Policy — defense-in-depth proti XSS / supply chain útokom -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
-  connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com;
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com;
+  connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://unpkg.com https://tessdata.projectnaptha.com https://fonts.googleapis.com https://fonts.gstatic.com;
   img-src 'self' data: blob:;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com;
@@ -45,18 +45,15 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Eager: Dexie + Supabase potrebné pri startApp pre auth + lokálnu DB -->
 <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"
         integrity="sha384-vG8R9Zn5YZHCeXt9gLNp8MnsUCqmIy7HPxhdOdLGa/30/c8uZXFrrN0iKGID/ZvC"
         crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"
         integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug"
         crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
-        integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"
-        integrity="sha384-Ptw8HCYAWF6vIop6WuGxfSCiDCIzUWqjrHYfx8Vd0S4CMBaicAdBh2y+Ufle664A"
-        crossorigin="anonymous"></script>
+<!-- Chart.js a Tesseract.js sa lazy-loadujú on-demand (viď loadChartJs/loadTesseract). -->
+<!-- Šetrí ~300KB initial download. Chart.js sa pre-loadne hneď po auth pre rýchly prvý render. -->
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#0e0f10">
 
@@ -1454,6 +1451,49 @@
     user-select: all;
   }
 
+  /* Spinner — reusable */
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--line-2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+  }
+  .spinner.lg { width: 32px; height: 32px; border-width: 3px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-row { display: flex; align-items: center; gap: 10px; padding: 12px; color: var(--ink-2); }
+
+  /* Startup overlay (during initial pull) */
+  .startup-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 10000;
+    color: var(--ink-2);
+    font-size: 14px;
+  }
+  .startup-overlay.hidden { display: none; }
+
+  /* Empty state — pre prázdne views */
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--ink-3);
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    background: var(--bg-2);
+  }
+  .empty-state .es-emoji { font-size: 36px; opacity: 0.6; display: block; margin-bottom: 12px; }
+  .empty-state .es-title { font-size: 16px; color: var(--ink); margin-bottom: 6px; font-family: 'Fraunces', serif; font-weight: 400; }
+  .empty-state .es-desc { font-size: 13px; line-height: 1.5; max-width: 360px; margin: 0 auto 14px; }
+
   /* PWA — update banner */
   .update-banner {
     position: fixed;
@@ -1488,6 +1528,12 @@
 </style>
 </head>
 <body>
+
+<!-- STARTUP OVERLAY — počas initial sync z cloudu -->
+<div class="startup-overlay hidden" id="startupOverlay" role="status" aria-live="polite">
+  <div class="spinner lg" aria-hidden="true"></div>
+  <div id="startupOverlayText">Sťahujem dáta z cloudu…</div>
+</div>
 
 <!-- PWA UPDATE BANNER -->
 <div class="update-banner hidden" id="updateBanner" role="status">
@@ -1535,17 +1581,19 @@
       <span class="sub">Tracker energií · v0.1</span>
     </div>
     <div class="header-actions">
-      <span class="sync-indicator" id="syncIndicator" title="">
-        <span class="sync-dot"></span>
+      <span class="sync-indicator" id="syncIndicator" title="" role="status" aria-live="polite" aria-atomic="true">
+        <span class="sync-dot" aria-hidden="true"></span>
         <span id="syncText">—</span>
       </span>
       <div class="household-switcher">
-        <button class="hh-button" id="hhButton">
-          <span class="hh-icon"></span>
+        <button class="hh-button" id="hhButton"
+                aria-haspopup="menu" aria-expanded="false"
+                aria-label="Prepnúť domácnosť">
+          <span class="hh-icon" aria-hidden="true"></span>
           <span class="hh-name" id="hhButtonName">—</span>
-          <span class="hh-chev">▼</span>
+          <span class="hh-chev" aria-hidden="true">▼</span>
         </button>
-        <div class="hh-dropdown hidden" id="hhDropdown"></div>
+        <div class="hh-dropdown hidden" id="hhDropdown" role="menu"></div>
       </div>
       <button class="btn btn-ghost" id="btnImport">Import JSON</button>
       <button class="btn btn-ghost" id="btnExport">Export JSON</button>
@@ -1777,13 +1825,13 @@
   </section>
 
   <!-- BOTTOM NAVIGATION (mobile only) -->
-  <nav class="bottom-tabs" id="bottomTabs">
-    <button class="bottom-tab active" data-tab="dashboard"><span class="bt-icon">🏠</span><span class="bt-label">Domov</span></button>
-    <button class="bottom-tab" data-tab="history"><span class="bt-icon">📋</span><span class="bt-label">História</span></button>
-    <button class="bottom-tab" data-tab="charts"><span class="bt-icon">📊</span><span class="bt-label">Grafy</span></button>
-    <button class="bottom-tab" data-tab="heatmap"><span class="bt-icon">🔥</span><span class="bt-label">Heatmap</span></button>
-    <button class="bottom-tab" data-tab="anomalies"><span class="bt-icon">⚠️</span><span class="bt-label">Anomálie</span></button>
-    <button class="bottom-tab" data-tab="settings"><span class="bt-icon">⚙️</span><span class="bt-label">Nastav.</span></button>
+  <nav class="bottom-tabs" id="bottomTabs" aria-label="Hlavná navigácia">
+    <button class="bottom-tab active" data-tab="dashboard" aria-label="Dashboard"><span class="bt-icon" aria-hidden="true">🏠</span><span class="bt-label">Domov</span></button>
+    <button class="bottom-tab" data-tab="history" aria-label="História odpočtov"><span class="bt-icon" aria-hidden="true">📋</span><span class="bt-label">História</span></button>
+    <button class="bottom-tab" data-tab="charts" aria-label="Grafy"><span class="bt-icon" aria-hidden="true">📊</span><span class="bt-label">Grafy</span></button>
+    <button class="bottom-tab" data-tab="heatmap" aria-label="Heatmapa"><span class="bt-icon" aria-hidden="true">🔥</span><span class="bt-label">Heatmap</span></button>
+    <button class="bottom-tab" data-tab="anomalies" aria-label="Anomálie"><span class="bt-icon" aria-hidden="true">⚠️</span><span class="bt-label">Anomálie</span></button>
+    <button class="bottom-tab" data-tab="settings" aria-label="Nastavenia"><span class="bt-icon" aria-hidden="true">⚙️</span><span class="bt-label">Nastav.</span></button>
   </nav>
 
   <!-- FAB — pridať odpočet (mobile only) -->
@@ -3151,6 +3199,26 @@ async function renderDashboard() {
   const grid = document.getElementById('metersGrid');
   grid.innerHTML = '';
 
+  // Empty state — nemá vybraný dom alebo dom nemá žiadne meradlá
+  if (!State.household) {
+    grid.innerHTML = `
+      <div class="empty-state" style="grid-column: 1 / -1;">
+        <span class="es-emoji" aria-hidden="true">🏠</span>
+        <div class="es-title">Žiadny dom</div>
+        <div class="es-desc">Vytvor si prvý dom v Nastaveniach a začni sledovať spotrebu.</div>
+      </div>`;
+    return;
+  }
+  if (State.meters.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state" style="grid-column: 1 / -1;">
+        <span class="es-emoji" aria-hidden="true">📐</span>
+        <div class="es-title">Tento dom nemá meradlá</div>
+        <div class="es-desc">Otvor Nastavenia → Domácnosti, premenuj alebo skús pridať dom s meradlami.</div>
+      </div>`;
+    return;
+  }
+
   const now = new Date();
   const curYM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
 
@@ -3216,6 +3284,7 @@ async function renderDashboard() {
 
 let compareChart;
 async function renderCompareChart() {
+  await loadChartJs();
   const ctx = document.getElementById('chartCompare').getContext('2d');
   if (compareChart) compareChart.destroy();
 
@@ -3444,8 +3513,8 @@ async function renderHistory() {
       <td>${escHtml(r.note || '')}</td>
       <td>
         <div class="row-actions">
-          <button class="row-btn" data-id="${r.id}" data-action="edit" title="Upraviť">✎</button>
-          <button class="row-btn danger" data-id="${r.id}" data-action="delete" title="Zmazať">×</button>
+          <button class="row-btn" data-id="${r.id}" data-action="edit" title="Upraviť" aria-label="Upraviť odpočet">✎</button>
+          <button class="row-btn danger" data-id="${r.id}" data-action="delete" title="Zmazať" aria-label="Zmazať odpočet">×</button>
         </div>
       </td>
     `;
@@ -3595,6 +3664,7 @@ function populateChartSelector() {
 
 let mainChart;
 async function renderChart() {
+  await loadChartJs();
   populateChartSelector();
   const meterType = document.getElementById('chartMeter').value;
   const view = document.getElementById('chartView').value;
@@ -4246,6 +4316,8 @@ async function ocrRun() {
   statusEl.textContent = 'Načítavam OCR engine...';
 
   try {
+    statusEl.textContent = 'Načítavam OCR knižnicu…';
+    await loadTesseract();
     const canvas = ocrPreprocess();
     const result = await Tesseract.recognize(canvas, 'eng', {
       logger: m => {
@@ -4689,7 +4761,7 @@ function ensureWritable() {
 async function renderSharingCard() {
   const body = document.getElementById('sharingCardBody');
   if (!body || !Sync.user) return;
-  body.innerHTML = '<div class="share-empty">Načítavam…</div>';
+  body.innerHTML = '<div class="loading-row"><span class="spinner" aria-hidden="true"></span>Načítavam zdieľania…</div>';
 
   const { data: shares, error } = await sb.from('household_shares').select('*').order('created_at');
   if (error) {
@@ -4861,12 +4933,16 @@ async function leaveShare(shareId) {
 document.getElementById('hhButton').addEventListener('click', (e) => {
   e.stopPropagation();
   const dd = document.getElementById('hhDropdown');
+  const btn = e.currentTarget;
+  const willOpen = dd.classList.contains('hidden');
   dd.classList.toggle('hidden');
+  btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
 });
 document.addEventListener('click', (e) => {
   const dd = document.getElementById('hhDropdown');
   if (!dd.classList.contains('hidden') && !e.target.closest('.household-switcher')) {
     dd.classList.add('hidden');
+    document.getElementById('hhButton').setAttribute('aria-expanded', 'false');
   }
 });
 document.getElementById('btnAddHousehold').addEventListener('click', openWizard);
@@ -5041,26 +5117,58 @@ ocrWrap.addEventListener('touchmove', ocrPointerMove, { passive: false });
 ocrWrap.addEventListener('touchend', ocrPointerEnd);
 
 /* =============================================================
+   LAZY-LOAD knižníc (Chart.js, Tesseract.js, SheetJS)
+   ============================================================= */
+
+const _scriptPromises = {};
+function loadScriptOnce(url, integrity) {
+  if (_scriptPromises[url]) return _scriptPromises[url];
+  _scriptPromises[url] = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    if (integrity) {
+      s.integrity = integrity;
+      s.crossOrigin = 'anonymous';
+    }
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load: ' + url));
+    document.head.appendChild(s);
+  });
+  return _scriptPromises[url];
+}
+
+async function loadChartJs() {
+  if (window.Chart) return window.Chart;
+  await loadScriptOnce(
+    'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
+    'sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g'
+  );
+  return window.Chart;
+}
+
+async function loadTesseract() {
+  if (window.Tesseract) return window.Tesseract;
+  await loadScriptOnce(
+    'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js',
+    'sha384-Ptw8HCYAWF6vIop6WuGxfSCiDCIzUWqjrHYfx8Vd0S4CMBaicAdBh2y+Ufle664A'
+  );
+  return window.Tesseract;
+}
+
+/* =============================================================
    EXCEL — import/export (xlsx)
    ============================================================= */
 
 const SK_MONTHS_GEN = ['januára','februára','marca','apríla','mája','júna','júla','augusta','septembra','októbra','novembra','decembra'];
 const SK_MONTHS_NOM = ['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
 
-let xlsxLoadPromise = null;
 async function loadXlsx() {
   if (window.XLSX) return window.XLSX;
-  if (xlsxLoadPromise) return xlsxLoadPromise;
-  xlsxLoadPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-    s.integrity = 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw';
-    s.crossOrigin = 'anonymous';
-    s.onload = () => resolve(window.XLSX);
-    s.onerror = () => reject(new Error('Nepodarilo sa stiahnuť Excel knižnicu (XLSX)'));
-    document.head.appendChild(s);
-  });
-  return xlsxLoadPromise;
+  await loadScriptOnce(
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw'
+  );
+  return window.XLSX;
 }
 
 function fmtDateSk(date) {
@@ -5234,7 +5342,7 @@ async function handleExcelImportFile(file) {
   const actions = document.getElementById('excelImportActions');
   modal.classList.remove('hidden');
   actions.style.display = 'none';
-  body.innerHTML = '<div class="share-empty">Parsujem Excel…</div>';
+  body.innerHTML = '<div class="loading-row"><span class="spinner" aria-hidden="true"></span>Parsujem Excel…</div>';
 
   try {
     const { rows, sheetName, multipleSheets } = await parseExcelFile(file);
@@ -5494,6 +5602,9 @@ if ('serviceWorker' in navigator) {
    ============================================================= */
 
 async function startApp() {
+  // -1) Pre-load Chart.js v pozadí (Dashboard ho potrebuje hneď, ale neblokujeme).
+  loadChartJs().catch(() => {});
+
   // 0) User-switch detekcia: ak sa prihlásil iný user než naposledy,
   //    vyčisti lokálnu Dexie aby sa cudzie dáta nepushli pod jeho user_id.
   const prevUser = await db.settings.get('lastUserId');
@@ -5529,10 +5640,18 @@ async function startApp() {
 
   if (cloudHasData) {
     // Cloud má dáta - stiahni ich. Mali by sa zlúčiť s lokálnymi cez sync mapy.
-    // Ak sync mapy sú prázdne (prvé prihlásenie z iného zariadenia), stiahnu sa všetky cloud dáta naraz.
+    const overlay = document.getElementById('startupOverlay');
+    const overlayText = document.getElementById('startupOverlayText');
+    if (overlay) {
+      overlayText.textContent = 'Sťahujem dáta z cloudu…';
+      overlay.classList.remove('hidden');
+    }
     try {
       await pullFromCloud();
     } catch(e) { /* status nastavený */ }
+    finally {
+      if (overlay) overlay.classList.add('hidden');
+    }
   } else {
     // Cloud je prázdny - nahrajme tam lokálne dáta (alebo seed ak nič neexistuje)
     if (!migrated) {
