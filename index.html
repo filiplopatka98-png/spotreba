@@ -4994,6 +4994,22 @@ if ('serviceWorker' in navigator) {
    ============================================================= */
 
 async function startApp() {
+  // 0) User-switch detekcia: ak sa prihlásil iný user než naposledy,
+  //    vyčisti lokálnu Dexie aby sa cudzie dáta nepushli pod jeho user_id.
+  const prevUser = await db.settings.get('lastUserId');
+  if (prevUser && prevUser.value && prevUser.value !== Sync.user.id) {
+    console.log('User switch detected:', prevUser.value, '→', Sync.user.id, '— wiping local data');
+    await db.households.clear();
+    await db.meters.clear();
+    await db.devices.clear();
+    await db.readings.clear();
+    await db.settings.delete('syncMaps');
+    await db.settings.delete('activeHousehold');
+    Sync.maps = { households: {}, meters: {}, devices: {}, readings: {} };
+    Sync.rev = { households: {}, meters: {}, devices: {}, readings: {} };
+  }
+  await db.settings.put({ key: 'lastUserId', value: Sync.user.id });
+
   // 1) Migrácia zo starej DB ak treba
   const migrated = await migrateFromOldDbIfNeeded();
 
