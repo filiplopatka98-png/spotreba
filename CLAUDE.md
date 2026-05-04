@@ -9,7 +9,7 @@ Single-file HTML aplikácia na sledovanie spotreby energií (elektrina/FV/voda/p
 - **Single-file HTML** — všetko (HTML, CSS, vanilla JS) je v `index.html` (~5300 riadkov). Žiadny build step, žiadny npm.
 - Externé knižnice cez CDN (s SRI integrity hashmi):
   - Eager v `<head>`: Dexie 3.2.4, Supabase JS 2.45.4 (potrebné pri startApp pre auth + lokálnu DB)
-  - Lazy-loaded cez `loadScriptOnce(url, integrity)` helper: Chart.js 4.4.0 (preload v startApp), Tesseract.js 5.0.4 (na prvý OCR), SheetJS 0.18.5 (na prvý Excel import/export)
+  - Lazy-loaded cez `loadScriptOnce(url, integrity)` helper: Chart.js 4.4.0 (preload v startApp), SheetJS 0.18.5 (na prvý Excel import/export)
 - PWA: `service-worker.js` (network-first pre app shell, cache-first pre CDN libs), `manifest.json`, kompletné ikony (SVG zdroj + PNG 16/32/180/192/512), iOS apple-touch-icon.
 - Cieľové prostredia: GitHub Pages (live), WebSupport (plánované), `python3 -m http.server 8000` (lokálne).
 
@@ -66,8 +66,8 @@ HTTP server je nutný (nie `file://`) kvôli CORS pri Supabase auth cookies.
 
 ## Bezpečnosť
 
-- **CSP** v `<meta http-equiv>` aj `.htaccess` Header. Allowlists: `cdn.jsdelivr.net`, `unpkg.com` (Tesseract core), `tessdata.projectnaptha.com` (Tesseract jazykové dáta), `*.supabase.co`, Google Fonts.
-- **SRI** (`integrity="sha384-..."`) na všetkých 5 CDN scriptoch (Dexie, Supabase, Chart.js, Tesseract, SheetJS). Pri update verzie knižnice nezabudni prepočítať hash: `curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+- **CSP** v `<meta http-equiv>` aj `.htaccess` Header. Allowlists: `cdn.jsdelivr.net` (knižnice), `*.supabase.co`.
+- **SRI** (`integrity="sha384-..."`) na všetkých 3 CDN scriptoch (Dexie, Supabase, Chart.js, SheetJS — posledné dva lazy). Pri update verzie knižnice nezabudni prepočítať hash: `curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
 - **HSTS + Permissions-Policy** v `.htaccess` (WebSupport). GitHub Pages ich nepodporuje, ale meta CSP + robots.txt + noindex meta to čiastočne nahradzujú.
 - **noindex** — `<meta name="robots">`, `robots.txt`, `X-Robots-Tag` HTTP header. Súkromná appka.
 - **XSS escape**: `escHtml(s)` (globálna funkcia) sa POVINNE volá pri každej user-content interpolácii do `innerHTML` (názov domu, poznámka odpočtu, owner email, atď.). Pri pridávaní novej render funkcie nezabudni!
@@ -86,7 +86,7 @@ HTTP server je nutný (nie `file://`) kvôli CORS pri Supabase auth cookies.
 | Settings tab HTML | ~1390 |
 | Phase C JS (sharing, RO mode) | ~4630–4870 |
 | Excel import/export modul | ~5070–5400 |
-| Lazy-loader + lib loaders (`loadChartJs`, `loadTesseract`, `loadXlsx`) | ~5040 |
+| Lazy-loader + lib loaders (`loadChartJs`, `loadXlsx`) | ~5040 |
 | PWA SW registration + update prompt | ~5410 |
 | Event handlery (button bindings) | ~4870+ |
 | `startApp` | ~5060 |

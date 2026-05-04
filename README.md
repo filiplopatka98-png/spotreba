@@ -5,7 +5,7 @@ Webová aplikácia na sledovanie spotreby elektriny, vody a plynu (s podporou fo
 ## Vlastnosti
 
 - 📊 Dashboard s mesačnou a ročnou spotrebou
-- 📷 OCR čítanie hodnôt z fotky merača (Tesseract.js)
+- 🎙️ Hlasový vstup (Web Speech API, Slovak) na rýchle nadiktovanie hodnoty
 - 📈 Grafy: mesačná spotreba, kumulatívne, year-over-year, heatmapa
 - ⚠️ Detekcia anomálií (porovnanie s historickým priemerom)
 - 🏠 Viacero domácností (vlastný + rodičovský dom atď.)
@@ -23,7 +23,6 @@ Webová aplikácia na sledovanie spotreby elektriny, vody a plynu (s podporou fo
 - React-free vanilla JS
 - [Dexie.js](https://dexie.org/) — IndexedDB wrapper
 - [Chart.js](https://www.chartjs.org/) — grafy
-- [Tesseract.js](https://tesseract.projectnaptha.com/) — OCR
 - [Supabase](https://supabase.com/) — auth + Postgres + RLS
 
 ## Lokálny vývoj
@@ -76,7 +75,7 @@ const SUPABASE_ANON_KEY = '...';
 - Anon key je verejný (štandard Supabase) — bezpečnosť zabezpečuje Row Level Security.
 - Po vytvorení všetkých účtov **vypni nové registrácie** v Supabase: Authentication → Providers → Email → Disable new user signups.
 - HTTPS je povinné v produkcii (Supabase auth cookies).
-- **CSP + SRI**: aplikácia má Content Security Policy (script-src allowlist + frame-ancestors none) v `<meta>` aj v `.htaccess` Header, plus SHA-384 integrity hashe na všetkých CDN scriptoch (Dexie, Supabase, Chart.js, Tesseract, SheetJS). Ochrana proti XSS aj kompromitovanému CDN.
+- **CSP + SRI**: aplikácia má Content Security Policy (script-src allowlist + frame-ancestors none) v `<meta>` aj v `.htaccess` Header, plus SHA-384 integrity hashe na všetkých CDN scriptoch (Dexie, Supabase, Chart.js, SheetJS). Ochrana proti XSS aj kompromitovanému CDN.
 - **HSTS + Permissions-Policy** sa nasadia automaticky cez `.htaccess` (WebSupport). GitHub Pages neumožňuje custom HTTP headers — preto sú tam len meta tagy.
 - **Indexovanie zakázané**: `<meta name="robots" content="noindex, nofollow, noarchive">`, `robots.txt` s `Disallow: /`, plus `X-Robots-Tag` HTTP header.
 - **XSS hardening**: všetok user-content (názvy domov, poznámky odpočtov) sa pred renderom escapuje cez globálnu `escHtml()` funkciu.

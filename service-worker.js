@@ -2,7 +2,7 @@
    Spotreba — service worker (PWA full offline)
    ============================================================= */
 
-const CACHE_NAME = 'spotreba-v2';  // bumped: vyčistí staré entries (vrátane prípadne polovičnej ssd.traineddata)
+const CACHE_NAME = 'spotreba-v3';  // bumped: vyčistí staré entries po odstránení OCR
 
 // Pre-cache iba app shell. Všetko ostatné (CDN libs, fonts, Tesseract
 // data) sa cachuje lazy pri prvom fetchi.
@@ -38,12 +38,6 @@ self.addEventListener('fetch', (e) => {
 
   // Pass-through pre Supabase API — auth a sync musia byť vždy live
   if (url.hostname.endsWith('.supabase.co')) return;
-
-  // Pass-through pre Tesseract trained data files — iOS Safari má bug s
-  // SW cache.put() na binárne súbory > ~10MB (stream sa zasekne pri 0%).
-  // Browser HTTP cache + Tesseract vlastný IndexedDB cache zabezpečia
-  // perzistenciu, takže SW caching tu netreba.
-  if (url.pathname.endsWith('.traineddata') || url.pathname.endsWith('.traineddata.gz')) return;
 
   // App shell (vlastná doména, root alebo index.html) → network-first
   // (aby user dostal najnovšiu verziu pri každom load-e online)
