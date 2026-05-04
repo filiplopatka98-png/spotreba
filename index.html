@@ -4376,25 +4376,58 @@ function isHeicFile(file) {
       || name.endsWith('.heic') || name.endsWith('.heif');
 }
 
+// Otestuj či browser dokáže HEIC zobraziť natívne (iOS Safari 17+).
+// Ak áno, neťaháme heic2any (1.35MB + pomalá WASM dekódovacia).
+async function canBrowserDisplayImage(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      URL.revokeObjectURL(url);
+      resolve(ok);
+    };
+    img.onload = () => finish(img.naturalWidth > 0 && img.naturalHeight > 0);
+    img.onerror = () => finish(false);
+    img.src = url;
+    // Safety timeout (browser shouldn't hang on Image load, ale buďme paranoidní)
+    setTimeout(() => finish(false), 3000);
+  });
+}
+
 async function ocrLoadFile(file) {
   const stage = document.getElementById('ocrStage');
   stage.classList.remove('hidden');
   OCR.imgEl = document.getElementById('ocrImage');
   OCR.wrap = document.getElementById('ocrCanvasWrap');
   OCR.roi = document.getElementById('ocrRoi');
+  const statusEl = document.getElementById('ocrStatusText');
 
   let blob = file;
-  // HEIC sa nezobrazí v Chrome / Firefox / starých Safari → konvertujeme na JPEG
+
   if (isHeicFile(file)) {
-    document.getElementById('ocrStatusText').textContent = 'Konvertujem HEIC na JPEG…';
-    try {
-      const heic2any = await loadHeic2any();
-      const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-      blob = Array.isArray(result) ? result[0] : result;
-    } catch (e) {
-      console.error('HEIC conversion failed', e);
-      document.getElementById('ocrStatusText').textContent = '⚠ HEIC sa nepodarilo skonvertovať: ' + e.message;
-      return;
+    // 1) Najprv skús či to vie browser sám (iOS Safari 17+ áno) — heic2any je 1.35MB + pomalý
+    statusEl.innerHTML = '<span class="spinner" aria-hidden="true"></span> Otváram HEIC…';
+    const nativeOk = await canBrowserDisplayImage(file);
+    if (!nativeOk) {
+      // 2) Fallback: heic2any conversion s timeout-om
+      statusEl.innerHTML = '<span class="spinner" aria-hidden="true"></span> Konvertujem HEIC na JPEG… (môže trvať 10-30s)';
+      try {
+        const heic2any = await loadHeic2any();
+        const conversion = heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+        // Race s 60s timeout aby user neviazol nekonečno
+        const result = await Promise.race([
+          conversion,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Konverzia trvala viac ako 60s — skús iný formát alebo menšiu fotku')), 60000))
+        ]);
+        blob = Array.isArray(result) ? result[0] : result;
+      } catch (e) {
+        console.error('HEIC conversion failed', e);
+        statusEl.textContent = '⚠ HEIC sa nedá spracovať: ' + (e.message || 'neznáma chyba') + '. Skús JPEG/PNG namiesto toho.';
+        return;
+      }
     }
   }
 
@@ -4405,7 +4438,10 @@ async function ocrLoadFile(file) {
     OCR.roi.classList.add('hidden');
     OCR.curRect = null;
     document.getElementById('ocrRun').disabled = true;
-    document.getElementById('ocrStatusText').textContent = 'Potiahni cez číslice';
+    statusEl.textContent = 'Potiahni cez číslice';
+  };
+  OCR.imgEl.onerror = () => {
+    statusEl.textContent = '⚠ Fotku sa nepodarilo zobraziť';
   };
   OCR.imgEl.src = url;
 }
