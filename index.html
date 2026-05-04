@@ -4526,31 +4526,48 @@ async function ocrRun() {
       user_defined_dpi: '300',
     };
 
-    // Multi-pass: skúsi 2 page-seg módy a vráti ten s vyššou confidence.
-    // PSM 7 = single line, PSM 13 = raw line (bez heuristickej segmentácie —
-    // často lepší pre LCD/mechanické displeje s fixed pozíciou číslic).
+    // Multi-engine + multi-PSM: skúsi 'eng' (univerzálny) AJ 'ssd'
+    // (komunitný model trénovaný presne na seven-segment LCD displeje
+    // — viď https://github.com/Shreeshrii/tessdata_ssd). 'ssd' je
+    // game-changer pre Sanxing / typické digitálne elektromery.
+    // Prvý OCR run s 'ssd' stiahne model (~11MB, potom cache cez SW).
+    const engines = [
+      { lang: 'eng', langPath: undefined,
+        label: 'štandardný' },
+      { lang: 'ssd', langPath: 'https://cdn.jsdelivr.net/gh/Shreeshrii/tessdata_ssd@master',
+        label: 'LCD seven-segment' },
+    ];
     const psmModes = ['7', '13'];
+    const totalPasses = engines.length * psmModes.length;
     const results = [];
-    for (let i = 0; i < psmModes.length; i++) {
-      const psm = psmModes[i];
-      statusEl.textContent = `Rozpoznávam (pas ${i + 1}/${psmModes.length})…`;
-      progEl.style.width = (i / psmModes.length * 100) + '%';
-      const r = await Tesseract.recognize(canvas, 'eng', {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            const overall = (i + m.progress) / psmModes.length;
-            progEl.style.width = (overall * 100) + '%';
-          } else if (m.status === 'loading tesseract core' || m.status === 'initializing tesseract') {
-            statusEl.textContent = 'Pripravujem OCR engine…';
-          } else if (m.status === 'loading language traineddata') {
-            statusEl.textContent = 'Sťahujem jazykové dáta…';
-          }
-        },
-        ...baseParams,
-        tessedit_pageseg_mode: psm
-      });
-      const text = (r.data.text || '').replace(/[^0-9]/g, '');
-      results.push({ psm, text, confidence: r.data.confidence || 0 });
+    let passIdx = 0;
+    for (const eng of engines) {
+      for (const psm of psmModes) {
+        passIdx++;
+        statusEl.textContent = `Pas ${passIdx}/${totalPasses} (${eng.label}, PSM ${psm})…`;
+        progEl.style.width = ((passIdx - 1) / totalPasses * 100) + '%';
+        try {
+          const opts = {
+            logger: m => {
+              if (m.status === 'recognizing text') {
+                const overall = (passIdx - 1 + m.progress) / totalPasses;
+                progEl.style.width = (overall * 100) + '%';
+              } else if (m.status === 'loading language traineddata') {
+                statusEl.textContent = `Sťahujem ${eng.label} model…` + (eng.lang === 'ssd' ? ' (~11MB, len prvýkrát)' : '');
+              }
+            },
+            ...baseParams,
+            tessedit_pageseg_mode: psm,
+          };
+          if (eng.langPath) opts.langPath = eng.langPath;
+          const r = await Tesseract.recognize(canvas, eng.lang, opts);
+          const text = (r.data.text || '').replace(/[^0-9]/g, '');
+          results.push({ engine: eng.label, lang: eng.lang, psm, text, confidence: r.data.confidence || 0 });
+        } catch (e) {
+          console.warn(`OCR pass ${eng.lang}/${psm} failed:`, e);
+          // ssd fail nezastavuje run — len ten pas vynechá
+        }
+      }
     }
     progEl.style.width = '100%';
 
@@ -4570,9 +4587,9 @@ async function ocrRun() {
     const conf = Math.round(best.confidence);
     let confLabel = '';
     if (conf >= 85) confLabel = '✓ vysoká istota';
-    else if (conf >= 70) confLabel = '~ stredná istota — overeniť';
-    else confLabel = '⚠ nízka istota — manuálne overeniť';
-    statusEl.textContent = `Prečítané: ${best.text} (${conf}%, ${confLabel})`;
+    else if (conf >= 70) confLabel = '~ stredná istota — overiť';
+    else confLabel = '⚠ nízka istota — manuálne overiť';
+    statusEl.textContent = `Prečítané: ${best.text} (${conf}%, ${best.engine || best.lang}, ${confLabel})`;
 
     document.getElementById('addValue').value = best.text;
     updateAddHint();
