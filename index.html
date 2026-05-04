@@ -5508,6 +5508,12 @@ const btnPreloadCancel = document.getElementById('btnPreloadCancel');
 if (btnPreloadAll) btnPreloadAll.addEventListener('click', () => { runAllPreloads(); });
 if (btnPreloadCancel) btnPreloadCancel.addEventListener('click', () => {
   PRELOAD_CANCELLED = true;
+  // Okamžite preruš aktívny fetch (ssd download). Bez tohto by sme čakali kým
+  // sa hung await dokončí — čo môže byť „nikdy" pri zaseknutom CDN/SW.
+  if (PRELOAD_ABORT) {
+    try { PRELOAD_ABORT.abort(); } catch (e) {}
+    PRELOAD_ABORT = null;
+  }
 });
 const ocrWrap = document.getElementById('ocrCanvasWrap');
 ocrWrap.addEventListener('mousedown', ocrPointerStart);
@@ -5993,6 +5999,7 @@ async function exportExcel() {
    ============================================================= */
 
 let PRELOAD_CANCELLED = false;
+let PRELOAD_ABORT = null;  // aktívny AbortController pre cancel
 
 const PRELOAD_TASKS = [
   {
@@ -6012,13 +6019,11 @@ const PRELOAD_TASKS = [
     id: 'ssd', name: 'LCD seven-segment model', size: '~11 MB',
     progressive: true,  // má reálny percentuálny progress
     fn: async (onProgress, onAbort) => {
+      // Stačí len pre-fetch — súbor pôjde do browser HTTP cache.
+      // Pri prvom OCR si Tesseract worker spustí init sám (rýchlo, zo cache).
+      // Po-download createWorker tu by zbytočne hangnul (Tesseract worker
+      // init s ssd je ťažký a nezvládne ho v rýchlom slede s pre-fetchom).
       await ensureSsdModelCached(onProgress, onAbort);
-      // Po stiahnutí ešte initnúť worker s ssd lang aby Tesseract mal v IndexedDB
-      await loadTesseract();
-      const w = await Tesseract.createWorker('ssd', 1, {
-        langPath: window.location.href.replace(/[^/]*$/, '')
-      });
-      await w.terminate();
     }
   },
   {
@@ -6067,12 +6072,11 @@ function renderPreloadList() {
 
 async function runAllPreloads() {
   PRELOAD_CANCELLED = false;
+  PRELOAD_ABORT = null;
   const btnAll = document.getElementById('btnPreloadAll');
   const btnCancel = document.getElementById('btnPreloadCancel');
   btnAll.disabled = true;
   btnCancel.classList.remove('hidden');
-
-  let abortCtrl = null;
 
   for (const task of PRELOAD_TASKS) {
     if (PRELOAD_CANCELLED) break;
@@ -6085,11 +6089,12 @@ async function runAllPreloads() {
             if (frac == null) {
               setPreloadStatus(task.id, 'Sťahuje sa…', 'busy');
             } else {
-              setPreloadStatus(task.id, Math.round(frac * 100) + ' %', 'busy');
-              setPreloadProgress(task.id, frac);
+              const clamped = Math.min(1, frac);
+              setPreloadStatus(task.id, Math.round(clamped * 100) + ' %', 'busy');
+              setPreloadProgress(task.id, clamped);
             }
           },
-          (ctrl) => { abortCtrl = ctrl; }
+          (ctrl) => { PRELOAD_ABORT = ctrl; }
         );
       } else {
         await task.fn();
@@ -6104,14 +6109,13 @@ async function runAllPreloads() {
       }
       console.error('Preload failed for', task.id, e);
       setPreloadStatus(task.id, '⚠ ' + (e.message || 'chyba'), 'err');
+    } finally {
+      PRELOAD_ABORT = null;
     }
   }
 
   btnAll.disabled = false;
   btnCancel.classList.add('hidden');
-  if (PRELOAD_CANCELLED && abortCtrl) {
-    try { abortCtrl.abort(); } catch (e) {}
-  }
 }
 
 /* =============================================================
