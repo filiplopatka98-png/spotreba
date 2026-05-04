@@ -4652,37 +4652,56 @@ async function ocrRun() {
 
     for (const eng of engines) {
       if (OCR_CANCELLED) break;
+
+      // Skúsi cached worker (po preload). Ak nie, fallback na fresh init.
+      let worker = null;
+      try {
+        worker = await ensureOcrWorker(eng.lang);
+      } catch (initErr) {
+        console.warn(`Worker init for ${eng.lang} failed, will use recognize() fallback:`, initErr);
+      }
+
       for (const psm of psmModes) {
         if (OCR_CANCELLED) break;
         passIdx++;
         statusEl.textContent = `Pas ${passIdx}/${totalPasses} (${eng.label}, PSM ${psm})…`;
         progEl.style.width = ((passIdx - 1) / totalPasses * 100) + '%';
         try {
-          const opts = {
-            logger: m => {
-              if (m.status === 'recognizing text') {
-                const overall = (passIdx - 1 + m.progress) / totalPasses;
-                progEl.style.width = (overall * 100) + '%';
-              } else if (m.status === 'loading language traineddata' || m.status === 'downloading language') {
-                // Tesseract.js posiela progress 0..1 počas downloadu — využime to
-                const pct = m.progress != null ? Math.round(m.progress * 100) : 0;
-                const sizeHint = eng.lang === 'ssd' ? ' (~11MB, jednorazovo)' : '';
-                statusEl.textContent = `Sťahujem ${eng.label} model: ${pct}%${sizeHint}`;
-                progEl.style.width = ((passIdx - 1) / totalPasses + (m.progress || 0) / totalPasses) * 100 + '%';
-              } else if (m.status === 'loading tesseract core') {
-                statusEl.textContent = 'Pripravujem OCR engine…';
-              }
-            },
-            ...baseParams,
-            tessedit_pageseg_mode: psm,
-          };
-          if (eng.langPath) opts.langPath = eng.langPath;
-          const r = await Tesseract.recognize(canvas, eng.lang, opts);
+          let r;
+          if (worker) {
+            // Cached worker route — žiadny re-download, žiadny re-init.
+            await worker.setParameters({
+              ...baseParams,
+              tessedit_pageseg_mode: psm,
+            });
+            r = await worker.recognize(canvas);
+          } else {
+            // Fallback: vytvor worker on-the-fly (pomalšie, prvý raz potrebuje download)
+            const opts = {
+              logger: m => {
+                if (m.status === 'recognizing text') {
+                  const overall = (passIdx - 1 + m.progress) / totalPasses;
+                  progEl.style.width = (overall * 100) + '%';
+                } else if (m.status === 'loading language traineddata' || m.status === 'downloading language') {
+                  const pct = m.progress != null ? Math.round(m.progress * 100) : 0;
+                  const hint = eng.lang === 'ssd' ? ' (~11MB)' : '';
+                  statusEl.textContent = `Sťahujem ${eng.label} model: ${pct}%${hint}`;
+                }
+              },
+              ...baseParams,
+              tessedit_pageseg_mode: psm,
+            };
+            if (eng.langPath) opts.langPath = eng.langPath;
+            if (eng.lang === 'ssd') {
+              opts.gzip = false;
+              opts.cacheMethod = 'none';
+            }
+            r = await Tesseract.recognize(canvas, eng.lang, opts);
+          }
           const text = (r.data.text || '').replace(/[^0-9]/g, '');
           results.push({ engine: eng.label, lang: eng.lang, psm, text, confidence: r.data.confidence || 0 });
         } catch (e) {
           console.warn(`OCR pass ${eng.lang}/${psm} failed:`, e);
-          // Jednotlivý pas fail nezastavuje ostatné
         }
       }
     }
@@ -5562,6 +5581,34 @@ async function loadTesseract() {
   return window.Tesseract;
 }
 
+// Cached OCR workers — pre-warm raz cez Settings → Predstiahnutie zdrojov,
+// potom všetky OCR vyvolania ich opätovne použijú bez nového sťahovania
+// a bez nového worker init (až do refresh-u stránky).
+let SSD_WORKER = null;
+let ENG_WORKER = null;
+
+async function ensureOcrWorker(lang) {
+  if (lang === 'eng') {
+    if (ENG_WORKER) return ENG_WORKER;
+    await loadTesseract();
+    ENG_WORKER = await Tesseract.createWorker('eng', 1);
+    return ENG_WORKER;
+  }
+  if (lang === 'ssd') {
+    if (SSD_WORKER) return SSD_WORKER;
+    await loadTesseract();
+    // gzip: false → neoptašuje sa po .traineddata.gz (nemáme ju)
+    // cacheMethod: 'none' → nezapisuje 11MB binarku do IDB (iOS Safari hang)
+    SSD_WORKER = await Tesseract.createWorker('ssd', 1, {
+      langPath: window.location.href.replace(/[^/]*$/, ''),
+      gzip: false,
+      cacheMethod: 'none',
+    });
+    return SSD_WORKER;
+  }
+  throw new Error('Unknown OCR language: ' + lang);
+}
+
 // Pre-fetch ssd.traineddata SAME-ORIGIN (samohostené v repo) s reálnym
 // progress trackingom. Tesseract.js neposiela percentuálny progress sám,
 // takže by user videl len "loading" bez pohybu.
@@ -6009,21 +6056,21 @@ const PRELOAD_TASKS = [
   {
     id: 'eng', name: 'Tesseract „eng" model', size: '~5 MB',
     fn: async () => {
-      await loadTesseract();
-      // createWorker s 'eng' jazykom forsne stiahnutie modelu
-      const w = await Tesseract.createWorker('eng', 1);
-      await w.terminate();
+      // Spustí worker raz a nechá nažive (cached v ENG_WORKER global).
+      // Všetky OCR pre eng použijú ten istý worker — žiadny re-init.
+      await ensureOcrWorker('eng');
     }
   },
   {
     id: 'ssd', name: 'LCD seven-segment model', size: '~11 MB',
-    progressive: true,  // má reálny percentuálny progress
+    progressive: true,
     fn: async (onProgress, onAbort) => {
-      // Stačí len pre-fetch — súbor pôjde do browser HTTP cache.
-      // Pri prvom OCR si Tesseract worker spustí init sám (rýchlo, zo cache).
-      // Po-download createWorker tu by zbytočne hangnul (Tesseract worker
-      // init s ssd je ťažký a nezvládne ho v rýchlom slede s pre-fetchom).
+      // 1) Pre-fetch s reálnym progress UI (file → browser HTTP cache)
       await ensureSsdModelCached(onProgress, onAbort);
+      // 2) Spustí Tesseract worker (využije HTTP cached file). cacheMethod
+      //    'none' obchádza IDB write hang; gzip false neoptašuje .gz.
+      //    Worker zostáva nažive v SSD_WORKER → OCR ho len reuse-ne.
+      await ensureOcrWorker('ssd');
     }
   },
   {
