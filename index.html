@@ -473,6 +473,8 @@
     width: 100%;
     max-width: 480px;
     margin: 16px;
+    max-height: calc(100vh - 32px);  /* nikdy nepretečie viewport */
+    overflow-y: auto;
     animation: slideUp 0.2s ease;
   }
   @keyframes slideUp { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -1278,17 +1280,22 @@
   }
   .ocr-canvas-wrap {
     position: relative;
-    width: 100%;
     overflow: hidden;
     border-radius: 6px;
     background: #000;
     line-height: 0;
     user-select: none;
     touch-action: none;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;          /* centrovaný v stage ak je menší než container */
   }
   .ocr-canvas-wrap img {
-    width: 100%;
     display: block;
+    max-width: 100%;
+    max-height: 50vh;        /* zabráni vysokej fotke roztiahnuť modal mimo viewportu */
+    width: auto;
+    height: auto;
     pointer-events: none;
   }
   .ocr-roi {
@@ -4353,13 +4360,45 @@ function ocrReset() {
   OCR.curRect = null;
 }
 
-function ocrLoadFile(file) {
-  const url = URL.createObjectURL(file);
+async function loadHeic2any() {
+  if (window.heic2any) return window.heic2any;
+  await loadScriptOnce(
+    'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js',
+    'sha384-OTofQ0MEeiSgh62havBcemCIK0gqj809wX6UA0uPISNMRnR6NZyCdGzX3SbLrgwL'
+  );
+  return window.heic2any;
+}
+
+function isHeicFile(file) {
+  const name = (file.name || '').toLowerCase();
+  const type = (file.type || '').toLowerCase();
+  return type === 'image/heic' || type === 'image/heif'
+      || name.endsWith('.heic') || name.endsWith('.heif');
+}
+
+async function ocrLoadFile(file) {
   const stage = document.getElementById('ocrStage');
   stage.classList.remove('hidden');
   OCR.imgEl = document.getElementById('ocrImage');
   OCR.wrap = document.getElementById('ocrCanvasWrap');
   OCR.roi = document.getElementById('ocrRoi');
+
+  let blob = file;
+  // HEIC sa nezobrazí v Chrome / Firefox / starých Safari → konvertujeme na JPEG
+  if (isHeicFile(file)) {
+    document.getElementById('ocrStatusText').textContent = 'Konvertujem HEIC na JPEG…';
+    try {
+      const heic2any = await loadHeic2any();
+      const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+      blob = Array.isArray(result) ? result[0] : result;
+    } catch (e) {
+      console.error('HEIC conversion failed', e);
+      document.getElementById('ocrStatusText').textContent = '⚠ HEIC sa nepodarilo skonvertovať: ' + e.message;
+      return;
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
   OCR.imgEl.onload = () => {
     OCR.natural = { w: OCR.imgEl.naturalWidth, h: OCR.imgEl.naturalHeight };
     OCR.display = { w: OCR.imgEl.clientWidth, h: OCR.imgEl.clientHeight };
