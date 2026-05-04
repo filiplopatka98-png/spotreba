@@ -2069,6 +2069,15 @@
     <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; display: block; margin-bottom: 8px;">Meradlo</label>
     <div class="meter-picker" id="addMeterPicker"></div>
 
+    <div class="ocr-section voice-section" id="voiceSection" style="margin-bottom: 18px;">
+      <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; display: block; margin-bottom: 8px;">Hlasový vstup (voliteľné)</label>
+      <button type="button" class="btn" id="btnVoice" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        <span id="btnVoiceLabel">Diktovať číslice</span>
+      </button>
+      <div id="voiceStatus" style="font-size: 12px; color: var(--ink-3); margin-top: 6px; min-height: 16px;"></div>
+    </div>
+
     <div class="ocr-section">
       <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; display: block; margin-bottom: 8px;">Foto merača (voliteľné)</label>
       <div class="ocr-toggle">
@@ -4375,19 +4384,23 @@ function ocrPreprocess() {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(OCR.imgEl, sx, sy, sw, sh, 0, 0, tw, th);
 
-  // grayscale + zvýšenie kontrastu + adaptívne prahovanie (Otsu approx)
+  // grayscale + median denoise + Otsu threshold + morphological close
   const img = ctx.getImageData(0, 0, tw, th);
   const d = img.data;
-  // 1. grayscale + histogram
+
+  // 1. grayscale
   const gray = new Uint8Array(tw * th);
-  const hist = new Array(256).fill(0);
   for (let i = 0; i < tw * th; i++) {
     const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2];
-    const v = (r * 0.299 + g * 0.587 + b * 0.114) | 0;
-    gray[i] = v;
-    hist[v]++;
+    gray[i] = (r * 0.299 + g * 0.587 + b * 0.114) | 0;
   }
-  // 2. Otsu threshold
+
+  // 2. median filter 3×3 — odstráni "salt & pepper" noise (prach, pavučiny)
+  const denoised = medianFilter3x3(gray, tw, th);
+
+  // 3. histogram + Otsu threshold (na denoised)
+  const hist = new Array(256).fill(0);
+  for (let i = 0; i < denoised.length; i++) hist[denoised[i]]++;
   const total = tw * th;
   let sum = 0;
   for (let i = 0; i < 256; i++) sum += i * hist[i];
@@ -4403,19 +4416,93 @@ function ocrPreprocess() {
     const v = wB * wF * (mB - mF) * (mB - mF);
     if (v > varMax) { varMax = v; threshold = t; }
   }
-  // 3. binarizácia – test na "biele číslice na tmavom" aj inverzia
-  // Heuristika: ak je menšina bielych pixlov než čiernych, sú číslice nad pozadím tmavé → priamo prahovať.
-  let above = 0;
-  for (let i = 0; i < gray.length; i++) if (gray[i] > threshold) above++;
-  const invert = above > total / 2; // ak väčšina pixlov je svetlá, číslice sú tmavé → ponecháme; invertujeme len ak väčšina je tmavá (číslice biele)
-  for (let i = 0; i < gray.length; i++) {
-    let v = gray[i] > threshold ? 255 : 0;
+
+  // 4. binarizácia + auto-invert (číslice musia byť ČIERNE na BIELOM pre Tesseract)
+  const bin = new Uint8Array(denoised.length);
+  let aboveCount = 0;
+  for (let i = 0; i < denoised.length; i++) {
+    if (denoised[i] > threshold) aboveCount++;
+  }
+  const invert = aboveCount > total / 2;
+  for (let i = 0; i < denoised.length; i++) {
+    let v = denoised[i] > threshold ? 255 : 0;
     if (invert) v = 255 - v;
-    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+    bin[i] = v;
+  }
+
+  // 5. morphological close (3×3) — zacelí drobné medzery v ťahoch číslic
+  const closed = morphClose3x3(bin, tw, th);
+
+  // 6. write back to image
+  for (let i = 0; i < closed.length; i++) {
+    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = closed[i];
     d[i * 4 + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
   return canvas;
+}
+
+// Median filter 3×3 — pre každý pixel zoberie medián z 9 susedov (vrátane seba).
+// Robust voči outliers (jednotlivé prach/pavučiny pixle).
+function medianFilter3x3(src, w, h) {
+  const out = new Uint8Array(src.length);
+  const win = new Uint8Array(9);
+  // borders: copy as-is
+  for (let i = 0; i < w; i++) { out[i] = src[i]; out[(h-1)*w + i] = src[(h-1)*w + i]; }
+  for (let y = 0; y < h; y++) { out[y*w] = src[y*w]; out[y*w + w-1] = src[y*w + w-1]; }
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const o = y * w + x;
+      win[0] = src[o - w - 1]; win[1] = src[o - w]; win[2] = src[o - w + 1];
+      win[3] = src[o - 1];     win[4] = src[o];     win[5] = src[o + 1];
+      win[6] = src[o + w - 1]; win[7] = src[o + w]; win[8] = src[o + w + 1];
+      // partial sort to find median (5th element of 9)
+      const arr = [win[0],win[1],win[2],win[3],win[4],win[5],win[6],win[7],win[8]];
+      arr.sort((a, b) => a - b);
+      out[o] = arr[4];
+    }
+  }
+  return out;
+}
+
+// Morphological close = dilate then erode. Vyplní drobné diery, zacelí prerušené ťahy.
+// Operates on binary 0/255 image.
+function morphClose3x3(src, w, h) {
+  // dilate: pixel becomes max of 3x3 window (any neighbor white → white)
+  const dil = new Uint8Array(src.length);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let max = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          if (src[yy * w + xx] > max) max = src[yy * w + xx];
+        }
+      }
+      dil[y * w + x] = max;
+    }
+  }
+  // erode: pixel becomes min of 3x3 window (any neighbor black → black)
+  const out = new Uint8Array(src.length);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let min = 255;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          if (dil[yy * w + xx] < min) min = dil[yy * w + xx];
+        }
+      }
+      out[y * w + x] = min;
+    }
+  }
+  return out;
 }
 
 async function ocrRun() {
@@ -5255,6 +5342,16 @@ document.getElementById('editDate').addEventListener('change', updateEditHint);
 document.getElementById('editValue').addEventListener('input', updateEditHint);
 
 // OCR handlers
+// Voice input — wire button OR hide section if browser nepodporuje
+const btnVoice = document.getElementById('btnVoice');
+if (btnVoice) {
+  if (isVoiceSupported()) {
+    btnVoice.addEventListener('click', startVoice);
+  } else {
+    document.getElementById('voiceSection').style.display = 'none';
+  }
+}
+
 document.getElementById('ocrCamera').addEventListener('click', () => document.getElementById('ocrFileCamera').click());
 document.getElementById('ocrUpload').addEventListener('click', () => document.getElementById('ocrFile').click());
 document.getElementById('ocrFileCamera').addEventListener('change', e => { if (e.target.files[0]) ocrLoadFile(e.target.files[0]); e.target.value = ''; });
@@ -5710,6 +5807,127 @@ async function exportExcel() {
   const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
   XLSX.writeFile(wb, `spotreba-${safeName}-${today}.xlsx`);
   toast('Excel exportovaný');
+}
+
+/* =============================================================
+   VOICE INPUT — Web Speech API + Slovak digit-word parser
+   ============================================================= */
+
+const SK_DIGIT_WORDS = {
+  // 0
+  'nula': '0', 'nuly': '0', 'núl': '0', 'nulu': '0',
+  // 1
+  'jeden': '1', 'jedna': '1', 'jedno': '1', 'jednu': '1', 'raz': '1', 'jednotka': '1',
+  // 2
+  'dva': '2', 'dve': '2', 'dvojka': '2', 'dvojku': '2',
+  // 3
+  'tri': '3', 'troch': '3', 'trojka': '3', 'trojku': '3',
+  // 4
+  'štyri': '4', 'štyry': '4', 'štyroch': '4', 'štvorka': '4', 'štvorku': '4',
+  // 5
+  'päť': '5', 'piatich': '5', 'pätka': '5', 'piatka': '5',
+  // 6
+  'šesť': '6', 'šiestich': '6', 'šestka': '6', 'šiestka': '6',
+  // 7
+  'sedem': '7', 'siedmich': '7', 'sedmička': '7', 'siedmička': '7',
+  // 8
+  'osem': '8', 'ôsmich': '8', 'osmička': '8', 'ôsmička': '8',
+  // 9
+  'deväť': '9', 'deviatich': '9', 'deviatka': '9',
+  // čiarka / decimal — ignorujeme (čísla sa píšu bez bodky pre stav počítadla)
+  'čiarka': '', 'bodka': ''
+};
+
+function parseSpokenDigits(text) {
+  // Strategy: extract Arabic digit runs OR Slovak digit words. Concatenate.
+  const tokens = (text || '').toLowerCase().replace(/[^\p{L}\d\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  let digits = '';
+  for (const t of tokens) {
+    if (/^\d+$/.test(t)) {
+      digits += t;
+    } else if (SK_DIGIT_WORDS[t] !== undefined) {
+      digits += SK_DIGIT_WORDS[t];
+    }
+    // ignore unrecognized tokens
+  }
+  return digits;
+}
+
+const Voice = { recognition: null, listening: false };
+
+function isVoiceSupported() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function startVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    toast('Tvoj prehliadač nepodporuje hlasové vstupy', true);
+    return;
+  }
+  // Toggle: ak už beží, zastav
+  if (Voice.listening && Voice.recognition) {
+    Voice.recognition.stop();
+    return;
+  }
+
+  const btn = document.getElementById('btnVoice');
+  const lbl = document.getElementById('btnVoiceLabel');
+  const status = document.getElementById('voiceStatus');
+
+  Voice.recognition = new SR();
+  Voice.recognition.lang = 'sk-SK';
+  Voice.recognition.continuous = false;
+  Voice.recognition.interimResults = true;
+  Voice.recognition.maxAlternatives = 1;
+
+  Voice.listening = true;
+  btn.classList.add('btn-primary');
+  lbl.textContent = 'Klikni pre zastavenie';
+  status.textContent = '🎙 Počúvam… hovor číslice po jednej (napr. „dva, jeden, šesť, osem, päť")';
+
+  Voice.recognition.onresult = (e) => {
+    let transcript = '';
+    let isFinal = false;
+    for (let i = 0; i < e.results.length; i++) {
+      transcript += e.results[i][0].transcript + ' ';
+      if (e.results[i].isFinal) isFinal = true;
+    }
+    transcript = transcript.trim();
+    const digits = parseSpokenDigits(transcript);
+    status.textContent = `🎙 „${transcript}" → ${digits || '(neznámé)'}`;
+    if (isFinal && digits) {
+      document.getElementById('addValue').value = digits;
+      updateAddHint();
+      toast(`Rozpoznané: ${digits}`);
+    } else if (isFinal && !digits) {
+      toast('Nerozpoznané ako číslice. Skús pomalšie.', true);
+    }
+  };
+
+  Voice.recognition.onerror = (e) => {
+    let msg = e.error || 'unknown';
+    if (msg === 'not-allowed') msg = 'mikrofón zamietnutý — povol prístup v nastaveniach prehliadača';
+    else if (msg === 'no-speech') msg = 'nezachytil som žiaden hlas';
+    else if (msg === 'audio-capture') msg = 'mikrofón nedostupný';
+    status.textContent = '⚠ ' + msg;
+  };
+
+  Voice.recognition.onend = () => {
+    Voice.listening = false;
+    btn.classList.remove('btn-primary');
+    lbl.textContent = 'Diktovať číslice';
+    Voice.recognition = null;
+  };
+
+  try {
+    Voice.recognition.start();
+  } catch (e) {
+    status.textContent = '⚠ Nepodarilo sa spustiť: ' + e.message;
+    Voice.listening = false;
+    btn.classList.remove('btn-primary');
+    lbl.textContent = 'Diktovať číslice';
+  }
 }
 
 /* =============================================================
