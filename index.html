@@ -1520,6 +1520,40 @@
     user-select: all;
   }
 
+  /* Preload list (Settings → Predstiahnutie zdrojov) */
+  .preload-item {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-radius: 8px;
+    border: 0.5px solid var(--line);
+    font-size: 13px;
+  }
+  .preload-item .pl-name { font-weight: 500; }
+  .preload-item .pl-size { font-size: 11px; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
+  .preload-item .pl-status { font-size: 12px; color: var(--ink-2); min-width: 90px; text-align: right; }
+  .preload-item .pl-status.done { color: var(--good-strong); font-weight: 600; }
+  .preload-item .pl-status.err { color: var(--bad-strong); }
+  .preload-item .pl-status.busy { color: var(--accent-strong); }
+  .preload-item .pl-bar {
+    grid-column: 1 / -1;
+    height: 3px;
+    background: var(--bg-3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .preload-item .pl-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.15s;
+  }
+  .preload-item.idle .pl-bar { display: none; }
+
   /* Theme segmented control (iOS UISegmentedControl pattern) */
   .theme-segment {
     display: flex;
@@ -1902,6 +1936,19 @@
         Keď ti vymenia fyzický merač, pridaj výmenu — zachová sa kontinuita spotreby.
       </p>
       <button class="btn" id="btnReplaceDevice">Zaznamenať výmenu merača</button>
+    </div>
+
+    <div class="card">
+      <h3 style="font-weight: 600; font-size: 17px; margin-bottom: 10px;">Predstiahnutie zdrojov</h3>
+      <p style="font-size: 13px; color: var(--ink-2); margin-bottom: 14px;">
+        Stiahni všetky knižnice + OCR modely naraz, aby boli dostupné offline a OCR pri prvom použití nečakal na sťahovanie.
+        Doporučené urobiť na WiFi (~17 MB celkovo).
+      </p>
+      <div id="preloadList" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px;"></div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn btn-primary" id="btnPreloadAll">Stiahnuť všetko</button>
+        <button class="btn btn-danger hidden" id="btnPreloadCancel">Zrušiť</button>
+      </div>
     </div>
 
     <div class="card hidden" id="installCard">
@@ -4827,7 +4874,7 @@ function switchTab(tab) {
   if (tab === 'charts') renderChart();
   if (tab === 'heatmap') renderHeatmap();
   if (tab === 'anomalies') renderAnomalies();
-  if (tab === 'settings') { loadSettings(); renderHouseholdsList(); renderSharingCard(); }
+  if (tab === 'settings') { loadSettings(); renderHouseholdsList(); renderSharingCard(); renderPreloadList(); }
 }
 
 async function loadSettings() {
@@ -5454,6 +5501,14 @@ document.getElementById('ocrCancel').addEventListener('click', () => {
   OCR_CANCELLED = true;
   document.getElementById('ocrStatusText').textContent = 'Ruším…';
 });
+
+// Preload (Settings → Predstiahnutie zdrojov)
+const btnPreloadAll = document.getElementById('btnPreloadAll');
+const btnPreloadCancel = document.getElementById('btnPreloadCancel');
+if (btnPreloadAll) btnPreloadAll.addEventListener('click', () => { runAllPreloads(); });
+if (btnPreloadCancel) btnPreloadCancel.addEventListener('click', () => {
+  PRELOAD_CANCELLED = true;
+});
 const ocrWrap = document.getElementById('ocrCanvasWrap');
 ocrWrap.addEventListener('mousedown', ocrPointerStart);
 ocrWrap.addEventListener('mousemove', ocrPointerMove);
@@ -5502,25 +5557,14 @@ async function loadTesseract() {
 }
 
 // Pre-fetch ssd.traineddata SAME-ORIGIN (samohostené v repo) s reálnym
-// progress trackingom. Tesseract.js neposiela percentuálny download progress
-// vlastnými event-mi, takže user by videl len "loading" bez pohybu.
+// progress trackingom. Tesseract.js neposiela percentuálny progress sám,
+// takže by user videl len "loading" bez pohybu.
 //
-// POZN.: ssd model je hostený v root-e (./ssd.traineddata) a nie cez CDN —
-// iOS Safari má issue s SW caching cross-origin 11MB súborov. Same-origin
-// to obchádza úplne.
+// SW pre .traineddata používa pass-through (žiadny SW cache), kvôli iOS
+// Safari bug-u s cache.put() na 10MB+ binárkach. Tesseract.js si súbor
+// uloží do svojho IndexedDB cache → druhý a ďalšie OCR-y bežia z cache.
 async function ensureSsdModelCached(onProgress, onAbort) {
   const url = './ssd.traineddata';
-
-  // Skontroluj SW cache (rovnaký CACHE_NAME) — ak je už tam, skip download
-  try {
-    const cache = await caches.open('spotreba-v1');
-    const cached = await cache.match(url);
-    if (cached) {
-      if (onProgress) onProgress(1);
-      return;
-    }
-  } catch (e) { /* ignore — pokračujeme s fetch */ }
-
   const ctrl = new AbortController();
   if (onAbort) onAbort(ctrl);
 
@@ -5529,17 +5573,15 @@ async function ensureSsdModelCached(onProgress, onAbort) {
 
   const total = parseInt(response.headers.get('content-length') || '0', 10);
   const reader = response.body.getReader();
-  const chunks = [];
   let loaded = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
     loaded += value.length;
     if (onProgress) onProgress(total > 0 ? loaded / total : null);
   }
-  // Po stiahnutí to už SW cache-uje sám (cache-first stratégia).
-  // Druhý a ďalšie volania ho dostanú instantne.
+  // Discard chunks — len sme „dotykli" sieť aby browser HTTP cache + Tesseract
+  // IndexedDB cache mali súbor. Tesseract si potom fetch-ne z HTTP cache.
 }
 
 /* =============================================================
@@ -5944,6 +5986,132 @@ async function exportExcel() {
   const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
   XLSX.writeFile(wb, `spotreba-${safeName}-${today}.xlsx`);
   toast('Excel exportovaný');
+}
+
+/* =============================================================
+   PRELOAD — Settings → Predstiahnutie zdrojov
+   ============================================================= */
+
+let PRELOAD_CANCELLED = false;
+
+const PRELOAD_TASKS = [
+  {
+    id: 'tesseract', name: 'Tesseract.js (OCR engine)', size: '~100 KB',
+    fn: async () => { await loadTesseract(); }
+  },
+  {
+    id: 'eng', name: 'Tesseract „eng" model', size: '~5 MB',
+    fn: async () => {
+      await loadTesseract();
+      // createWorker s 'eng' jazykom forsne stiahnutie modelu
+      const w = await Tesseract.createWorker('eng', 1);
+      await w.terminate();
+    }
+  },
+  {
+    id: 'ssd', name: 'LCD seven-segment model', size: '~11 MB',
+    progressive: true,  // má reálny percentuálny progress
+    fn: async (onProgress, onAbort) => {
+      await ensureSsdModelCached(onProgress, onAbort);
+      // Po stiahnutí ešte initnúť worker s ssd lang aby Tesseract mal v IndexedDB
+      await loadTesseract();
+      const w = await Tesseract.createWorker('ssd', 1, {
+        langPath: window.location.href.replace(/[^/]*$/, '')
+      });
+      await w.terminate();
+    }
+  },
+  {
+    id: 'chart', name: 'Chart.js (grafy)', size: '~200 KB',
+    fn: async () => { await loadChartJs(); }
+  },
+  {
+    id: 'xlsx', name: 'SheetJS (Excel import/export)', size: '~250 KB',
+    fn: async () => { await loadXlsx(); }
+  },
+];
+
+function setPreloadStatus(id, text, klass) {
+  const item = document.querySelector(`.preload-item[data-id="${id}"]`);
+  if (!item) return;
+  const statusEl = item.querySelector('.pl-status');
+  statusEl.textContent = text;
+  statusEl.className = 'pl-status ' + (klass || '');
+  item.classList.toggle('idle', !klass || klass === 'idle' || klass === 'done' || klass === 'err');
+}
+
+function setPreloadProgress(id, frac) {
+  const item = document.querySelector(`.preload-item[data-id="${id}"]`);
+  if (!item) return;
+  const fill = item.querySelector('.pl-bar-fill');
+  if (fill && frac != null) fill.style.width = (frac * 100) + '%';
+  item.classList.remove('idle');
+}
+
+function renderPreloadList() {
+  const list = document.getElementById('preloadList');
+  if (!list) return;
+  list.innerHTML = PRELOAD_TASKS.map(t => {
+    const stored = localStorage.getItem('preload-' + t.id);
+    const isDone = stored === '1';
+    return `
+      <div class="preload-item idle" data-id="${escHtml(t.id)}">
+        <span class="pl-name">${escHtml(t.name)}</span>
+        <span class="pl-size">${escHtml(t.size)}</span>
+        <span class="pl-status ${isDone ? 'done' : ''}">${isDone ? '✓ Hotové' : '—'}</span>
+        <div class="pl-bar"><div class="pl-bar-fill"></div></div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function runAllPreloads() {
+  PRELOAD_CANCELLED = false;
+  const btnAll = document.getElementById('btnPreloadAll');
+  const btnCancel = document.getElementById('btnPreloadCancel');
+  btnAll.disabled = true;
+  btnCancel.classList.remove('hidden');
+
+  let abortCtrl = null;
+
+  for (const task of PRELOAD_TASKS) {
+    if (PRELOAD_CANCELLED) break;
+    setPreloadStatus(task.id, 'Sťahuje sa…', 'busy');
+    setPreloadProgress(task.id, 0);
+    try {
+      if (task.progressive) {
+        await task.fn(
+          (frac) => {
+            if (frac == null) {
+              setPreloadStatus(task.id, 'Sťahuje sa…', 'busy');
+            } else {
+              setPreloadStatus(task.id, Math.round(frac * 100) + ' %', 'busy');
+              setPreloadProgress(task.id, frac);
+            }
+          },
+          (ctrl) => { abortCtrl = ctrl; }
+        );
+      } else {
+        await task.fn();
+        setPreloadProgress(task.id, 1);
+      }
+      setPreloadStatus(task.id, '✓ Hotové', 'done');
+      try { localStorage.setItem('preload-' + task.id, '1'); } catch (e) {}
+    } catch (e) {
+      if (e.name === 'AbortError' || PRELOAD_CANCELLED) {
+        setPreloadStatus(task.id, 'Zrušené', 'idle');
+        break;
+      }
+      console.error('Preload failed for', task.id, e);
+      setPreloadStatus(task.id, '⚠ ' + (e.message || 'chyba'), 'err');
+    }
+  }
+
+  btnAll.disabled = false;
+  btnCancel.classList.add('hidden');
+  if (PRELOAD_CANCELLED && abortCtrl) {
+    try { abortCtrl.abort(); } catch (e) {}
+  }
 }
 
 /* =============================================================
