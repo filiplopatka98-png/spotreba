@@ -4343,7 +4343,7 @@ function ocrPointerMove(e) {
 function ocrPointerEnd() {
   if (!OCR.selecting) return;
   OCR.selecting = false;
-  if (OCR.curRect && OCR.curRect.w > 20 && OCR.curRect.h > 12) {
+  if (OCR.curRect && OCR.curRect.w > 8 && OCR.curRect.h > 6) {
     document.getElementById('ocrRun').disabled = false;
     document.getElementById('ocrStatusText').textContent = 'Pripravené – klikni Prečítať hodnotu';
   } else {
