@@ -4560,6 +4560,47 @@ async function ocrRun() {
     const totalPasses = engines.length * psmModes.length;
     const results = [];
     let passIdx = 0;
+    // Pre-fetch ssd model (s reálnym progress) ak je medzi enginami.
+    // Bez tohto by Tesseract sám sťahoval bez progress eventov a UI by visela.
+    if (engines.some(e => e.lang === 'ssd')) {
+      try {
+        statusEl.textContent = 'Pripravujem LCD model…';
+        let downloadAbort = null;
+        const cancelInterval = setInterval(() => {
+          if (OCR_CANCELLED && downloadAbort) downloadAbort.abort();
+        }, 200);
+        await ensureSsdModelCached(
+          (frac) => {
+            if (frac == null) {
+              statusEl.textContent = `Sťahujem LCD model… (~11MB, jednorazovo)`;
+            } else {
+              const pct = Math.round(frac * 100);
+              statusEl.textContent = `Sťahujem LCD model: ${pct}% (~11MB, jednorazovo)`;
+              progEl.style.width = (frac * 30) + '%';  // download fáza = 30% celkového progressu
+            }
+          },
+          (ctrl) => { downloadAbort = ctrl; }
+        );
+        clearInterval(cancelInterval);
+        if (OCR_CANCELLED) {
+          statusEl.textContent = 'Zrušené';
+          cleanup();
+          return;
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') {
+          statusEl.textContent = 'Zrušené';
+          cleanup();
+          return;
+        }
+        statusEl.textContent = `⚠ LCD model sa nestiahol (${e.message}). Pokračujem bez neho.`;
+        // Vyhoď ssd zo zoznamu enginov, neskončím — eng pas môže ešte uspieť.
+        const filtered = engines.filter(e => e.lang !== 'ssd');
+        engines.length = 0;
+        engines.push(...filtered);
+      }
+    }
+
     for (const eng of engines) {
       if (OCR_CANCELLED) break;
       for (const psm of psmModes) {
@@ -5456,6 +5497,63 @@ async function loadTesseract() {
     'sha384-Ptw8HCYAWF6vIop6WuGxfSCiDCIzUWqjrHYfx8Vd0S4CMBaicAdBh2y+Ufle664A'
   );
   return window.Tesseract;
+}
+
+// Pre-fetch ssd.traineddata sami s reálnym progress trackingom (Response.body
+// getReader). Tesseract.js neposiela percentuálny progress, takže by user
+// videl iba "Sťahujem... 0%" bez pohybu. Po pre-fetchi do cache (rovnaký
+// CACHE_NAME ako service-worker), Tesseract dostane file z cache instantne.
+async function ensureSsdModelCached(onProgress, onAbort) {
+  const url = 'https://cdn.jsdelivr.net/gh/Shreeshrii/tessdata_ssd@master/ssd.traineddata';
+  const CACHE_NAME = 'spotreba-v1';
+
+  let cache;
+  try {
+    cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(url);
+    if (cached) {
+      if (onProgress) onProgress(1);
+      return; // už máme
+    }
+  } catch (e) {
+    // Caches API zlyhá → idem rovno na fetch (Tesseract si poradí sám neskôr)
+    console.warn('Cache API not available:', e);
+  }
+
+  const ctrl = new AbortController();
+  if (onAbort) onAbort(ctrl);
+
+  const response = await fetch(url, { signal: ctrl.signal });
+  if (!response.ok) throw new Error(`Stiahnutie LCD modelu zlyhalo: HTTP ${response.status}`);
+
+  const total = parseInt(response.headers.get('content-length') || '0', 10);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    if (onProgress) onProgress(total > 0 ? loaded / total : null);
+  }
+  const blob = new Blob(chunks);
+
+  // Cache pre Tesseract budúci fetch (cez náš SW cache-first). Nie kritické
+  // ak zlyhá — Tesseract by si stiahol znova, ale aspoň nie hneď zas.
+  if (cache) {
+    try {
+      const cacheable = new Response(blob, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(blob.size),
+        },
+      });
+      await cache.put(url, cacheable);
+    } catch (e) {
+      console.warn('Cache put failed (model still downloaded, just not persisted):', e);
+    }
+  }
 }
 
 /* =============================================================
