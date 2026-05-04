@@ -4420,7 +4420,12 @@ function ocrPointerEnd() {
 }
 
 // Predspracovanie - vyextrahuj ROI, zväčši, prahuj na ČB pre lepšiu OCR presnosť.
-function ocrPreprocess() {
+// mode: 'mechanical' (default — median + Otsu + morph close, vhodné pre
+//       mechanické rolery, handwritten, nečisté displeje)
+//       'lcd' (LIGHT pipeline — len grayscale + Otsu, BEZ median/morph,
+//       aby sa nezničili tenké LCD segmenty)
+function ocrPreprocess(mode) {
+  mode = mode || 'mechanical';
   const r = OCR.curRect;
   const sx = r.x / OCR.display.w * OCR.natural.w;
   const sy = r.y / OCR.display.h * OCR.natural.h;
@@ -4440,7 +4445,6 @@ function ocrPreprocess() {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(OCR.imgEl, sx, sy, sw, sh, 0, 0, tw, th);
 
-  // grayscale + median denoise + Otsu threshold + morphological close
   const img = ctx.getImageData(0, 0, tw, th);
   const d = img.data;
 
@@ -4451,10 +4455,10 @@ function ocrPreprocess() {
     gray[i] = (r * 0.299 + g * 0.587 + b * 0.114) | 0;
   }
 
-  // 2. median filter 3×3 — odstráni "salt & pepper" noise (prach, pavučiny)
-  const denoised = medianFilter3x3(gray, tw, th);
+  // 2. median filter — len pre mechanical (LCD je čistý, median by zaokrúhľoval segmenty)
+  const denoised = mode === 'mechanical' ? medianFilter3x3(gray, tw, th) : gray;
 
-  // 3. histogram + Otsu threshold (na denoised)
+  // 3. histogram + Otsu threshold
   const hist = new Array(256).fill(0);
   for (let i = 0; i < denoised.length; i++) hist[denoised[i]]++;
   const total = tw * th;
@@ -4486,12 +4490,12 @@ function ocrPreprocess() {
     bin[i] = v;
   }
 
-  // 5. morphological close (3×3) — zacelí drobné medzery v ťahoch číslic
-  const closed = morphClose3x3(bin, tw, th);
+  // 5. morphological close — len pre mechanical (na LCD by spojilo susedné segmenty)
+  const final = mode === 'mechanical' ? morphClose3x3(bin, tw, th) : bin;
 
   // 6. write back to image
-  for (let i = 0; i < closed.length; i++) {
-    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = closed[i];
+  for (let i = 0; i < final.length; i++) {
+    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = final[i];
     d[i * 4 + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
@@ -4585,7 +4589,10 @@ async function ocrRun() {
     statusEl.textContent = 'Načítavam OCR knižnicu…';
     await loadTesseract();
     if (OCR_CANCELLED) { cleanup(); return; }
-    const canvas = ocrPreprocess();
+    // Pre-compute oba canvases — eng pas dostane mechanical mode (median+morph),
+    // ssd pas dostane lcd mode (LIGHT, neničí tenké segmenty).
+    const canvasMech = ocrPreprocess('mechanical');
+    const canvasLcd = ocrPreprocess('lcd');
 
     // Spoločné parametre — DPI hint 300 (default 70 je príliš nízky pre fotky)
     // a whitelist iba na číslice.
@@ -4674,7 +4681,7 @@ async function ocrRun() {
               ...baseParams,
               tessedit_pageseg_mode: psm,
             });
-            r = await worker.recognize(canvas);
+            r = await worker.recognize(eng.lang === 'ssd' ? canvasLcd : canvasMech);
           } else {
             // Fallback: vytvor worker on-the-fly (pomalšie, prvý raz potrebuje download)
             const opts = {
@@ -4696,7 +4703,7 @@ async function ocrRun() {
               opts.gzip = false;
               opts.cacheMethod = 'none';
             }
-            r = await Tesseract.recognize(canvas, eng.lang, opts);
+            r = await Tesseract.recognize(eng.lang === 'ssd' ? canvasLcd : canvasMech, eng.lang, opts);
           }
           const text = (r.data.text || '').replace(/[^0-9]/g, '');
           results.push({ engine: eng.label, lang: eng.lang, psm, text, confidence: r.data.confidence || 0 });
