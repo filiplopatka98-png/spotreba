@@ -2104,7 +2104,16 @@
         </div>
         <div style="display: flex; gap: 8px; margin-top: 10px;">
           <button type="button" class="btn btn-ghost" id="ocrClear">Zrušiť foto</button>
+          <button type="button" class="btn btn-danger hidden" id="ocrCancel">Zrušiť rozpoznávanie</button>
           <button type="button" class="btn btn-primary" id="ocrRun" disabled style="flex: 1;">Prečítať hodnotu</button>
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+          <label style="font-size: 12px; color: var(--ink-3);">Typ merača:</label>
+          <select id="ocrEngine" style="flex: 1; padding: 6px 10px; font-size: 13px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font-family: inherit;">
+            <option value="auto">Auto (skús oba)</option>
+            <option value="eng">Bežný (rýchly, bez sťahovania)</option>
+            <option value="ssd">LCD seven-segment (jednorazovo 11MB)</option>
+          </select>
         </div>
       </div>
     </div>
@@ -4505,18 +4514,30 @@ function morphClose3x3(src, w, h) {
   return out;
 }
 
+let OCR_CANCELLED = false;
+
 async function ocrRun() {
   if (!OCR.curRect) return;
+  OCR_CANCELLED = false;
   document.getElementById('ocrRun').disabled = true;
+  document.getElementById('ocrCancel').classList.remove('hidden');
   const statusEl = document.getElementById('ocrStatusText');
   const progEl = document.getElementById('ocrProgressBar');
   const progWrap = document.getElementById('ocrProgressWrap');
   progWrap.classList.remove('hidden');
-  statusEl.textContent = 'Načítavam OCR engine...';
+  progEl.style.width = '0%';
+  statusEl.textContent = 'Načítavam OCR engine…';
+
+  // Outer try/finally aby cancel button vždy fungoval a state cleaned up
+  const cleanup = () => {
+    document.getElementById('ocrRun').disabled = false;
+    document.getElementById('ocrCancel').classList.add('hidden');
+  };
 
   try {
     statusEl.textContent = 'Načítavam OCR knižnicu…';
     await loadTesseract();
+    if (OCR_CANCELLED) { cleanup(); return; }
     const canvas = ocrPreprocess();
 
     // Spoločné parametre — DPI hint 300 (default 70 je príliš nízky pre fotky)
@@ -4526,23 +4547,23 @@ async function ocrRun() {
       user_defined_dpi: '300',
     };
 
-    // Multi-engine + multi-PSM: skúsi 'eng' (univerzálny) AJ 'ssd'
-    // (komunitný model trénovaný presne na seven-segment LCD displeje
-    // — viď https://github.com/Shreeshrii/tessdata_ssd). 'ssd' je
-    // game-changer pre Sanxing / typické digitálne elektromery.
-    // Prvý OCR run s 'ssd' stiahne model (~11MB, potom cache cez SW).
-    const engines = [
-      { lang: 'eng', langPath: undefined,
-        label: 'štandardný' },
-      { lang: 'ssd', langPath: 'https://cdn.jsdelivr.net/gh/Shreeshrii/tessdata_ssd@master',
-        label: 'LCD seven-segment' },
-    ];
+    // Engine voľba zo selectora — auto (oba), eng (rýchly), ssd (LCD)
+    const engineSel = document.getElementById('ocrEngine')?.value || 'auto';
+    const ENGINES = {
+      eng: { lang: 'eng', langPath: undefined, label: 'bežný' },
+      ssd: { lang: 'ssd', langPath: 'https://cdn.jsdelivr.net/gh/Shreeshrii/tessdata_ssd@master', label: 'LCD seven-segment' },
+    };
+    const engines = engineSel === 'auto' ? [ENGINES.eng, ENGINES.ssd]
+                  : engineSel === 'eng'  ? [ENGINES.eng]
+                  : [ENGINES.ssd];
     const psmModes = ['7', '13'];
     const totalPasses = engines.length * psmModes.length;
     const results = [];
     let passIdx = 0;
     for (const eng of engines) {
+      if (OCR_CANCELLED) break;
       for (const psm of psmModes) {
+        if (OCR_CANCELLED) break;
         passIdx++;
         statusEl.textContent = `Pas ${passIdx}/${totalPasses} (${eng.label}, PSM ${psm})…`;
         progEl.style.width = ((passIdx - 1) / totalPasses * 100) + '%';
@@ -4552,8 +4573,14 @@ async function ocrRun() {
               if (m.status === 'recognizing text') {
                 const overall = (passIdx - 1 + m.progress) / totalPasses;
                 progEl.style.width = (overall * 100) + '%';
-              } else if (m.status === 'loading language traineddata') {
-                statusEl.textContent = `Sťahujem ${eng.label} model…` + (eng.lang === 'ssd' ? ' (~11MB, len prvýkrát)' : '');
+              } else if (m.status === 'loading language traineddata' || m.status === 'downloading language') {
+                // Tesseract.js posiela progress 0..1 počas downloadu — využime to
+                const pct = m.progress != null ? Math.round(m.progress * 100) : 0;
+                const sizeHint = eng.lang === 'ssd' ? ' (~11MB, jednorazovo)' : '';
+                statusEl.textContent = `Sťahujem ${eng.label} model: ${pct}%${sizeHint}`;
+                progEl.style.width = ((passIdx - 1) / totalPasses + (m.progress || 0) / totalPasses) * 100 + '%';
+              } else if (m.status === 'loading tesseract core') {
+                statusEl.textContent = 'Pripravujem OCR engine…';
               }
             },
             ...baseParams,
@@ -4565,9 +4592,14 @@ async function ocrRun() {
           results.push({ engine: eng.label, lang: eng.lang, psm, text, confidence: r.data.confidence || 0 });
         } catch (e) {
           console.warn(`OCR pass ${eng.lang}/${psm} failed:`, e);
-          // ssd fail nezastavuje run — len ten pas vynechá
+          // Jednotlivý pas fail nezastavuje ostatné
         }
       }
+    }
+    if (OCR_CANCELLED) {
+      statusEl.textContent = 'Zrušené';
+      cleanup();
+      return;
     }
     progEl.style.width = '100%';
 
@@ -4579,8 +4611,8 @@ async function ocrRun() {
     const best = results[0];
 
     if (!best || best.text.length === 0) {
-      statusEl.textContent = '⚠ Nič sa nepodarilo prečítať. Skús zmenšiť výseč len na číslice.';
-      document.getElementById('ocrRun').disabled = false;
+      statusEl.textContent = '⚠ Nič sa nepodarilo prečítať. Skús zmenšiť výseč len na číslice alebo zmeň typ merača v dropdown-e.';
+      cleanup();
       return;
     }
 
@@ -4593,7 +4625,7 @@ async function ocrRun() {
 
     document.getElementById('addValue').value = best.text;
     updateAddHint();
-    document.getElementById('ocrRun').disabled = false;
+    cleanup();
 
     // Ak nízka confidence — focus na input field aby user vedel hneď opraviť
     if (conf < 75) {
@@ -4603,7 +4635,7 @@ async function ocrRun() {
     }
   } catch (e) {
     statusEl.textContent = '⚠ Chyba OCR: ' + e.message;
-    document.getElementById('ocrRun').disabled = false;
+    cleanup();
   }
 }
 
@@ -5375,6 +5407,10 @@ document.getElementById('ocrFileCamera').addEventListener('change', e => { if (e
 document.getElementById('ocrFile').addEventListener('change', e => { if (e.target.files[0]) ocrLoadFile(e.target.files[0]); e.target.value = ''; });
 document.getElementById('ocrClear').addEventListener('click', ocrReset);
 document.getElementById('ocrRun').addEventListener('click', ocrRun);
+document.getElementById('ocrCancel').addEventListener('click', () => {
+  OCR_CANCELLED = true;
+  document.getElementById('ocrStatusText').textContent = 'Ruším…';
+});
 const ocrWrap = document.getElementById('ocrCanvasWrap');
 ocrWrap.addEventListener('mousedown', ocrPointerStart);
 ocrWrap.addEventListener('mousemove', ocrPointerMove);
