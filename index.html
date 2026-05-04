@@ -4362,8 +4362,8 @@ function ocrPreprocess() {
   const sw = r.w / OCR.display.w * OCR.natural.w;
   const sh = r.h / OCR.display.h * OCR.natural.h;
 
-  // upscale na min šírku 600px pre lepšie OCR
-  const targetW = Math.max(600, sw);
+  // upscale na min šírku 1200px pre lepšie OCR (Tesseract LSTM má rád ~30-50px na znak)
+  const targetW = Math.max(1200, sw);
   const scale = targetW / sw;
   const tw = Math.round(sw * scale);
   const th = Math.round(sh * scale);
@@ -4431,31 +4431,72 @@ async function ocrRun() {
     statusEl.textContent = 'Načítavam OCR knižnicu…';
     await loadTesseract();
     const canvas = ocrPreprocess();
-    const result = await Tesseract.recognize(canvas, 'eng', {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          progEl.style.width = (m.progress * 100) + '%';
-          statusEl.textContent = 'Rozpoznávam číslice... ' + Math.round(m.progress * 100) + '%';
-        } else if (m.status === 'loading tesseract core' || m.status === 'initializing tesseract') {
-          statusEl.textContent = 'Pripravujem OCR engine...';
-        } else if (m.status === 'loading language traineddata') {
-          statusEl.textContent = 'Sťahujem jazykové dáta...';
-        }
-      },
+
+    // Spoločné parametre — DPI hint 300 (default 70 je príliš nízky pre fotky)
+    // a whitelist iba na číslice.
+    const baseParams = {
       tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '7' // jeden riadok textu
-    });
-    const raw = (result.data.text || '').replace(/[^0-9]/g, '');
+      user_defined_dpi: '300',
+    };
+
+    // Multi-pass: skúsi 2 page-seg módy a vráti ten s vyššou confidence.
+    // PSM 7 = single line, PSM 13 = raw line (bez heuristickej segmentácie —
+    // často lepší pre LCD/mechanické displeje s fixed pozíciou číslic).
+    const psmModes = ['7', '13'];
+    const results = [];
+    for (let i = 0; i < psmModes.length; i++) {
+      const psm = psmModes[i];
+      statusEl.textContent = `Rozpoznávam (pas ${i + 1}/${psmModes.length})…`;
+      progEl.style.width = (i / psmModes.length * 100) + '%';
+      const r = await Tesseract.recognize(canvas, 'eng', {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const overall = (i + m.progress) / psmModes.length;
+            progEl.style.width = (overall * 100) + '%';
+          } else if (m.status === 'loading tesseract core' || m.status === 'initializing tesseract') {
+            statusEl.textContent = 'Pripravujem OCR engine…';
+          } else if (m.status === 'loading language traineddata') {
+            statusEl.textContent = 'Sťahujem jazykové dáta…';
+          }
+        },
+        ...baseParams,
+        tessedit_pageseg_mode: psm
+      });
+      const text = (r.data.text || '').replace(/[^0-9]/g, '');
+      results.push({ psm, text, confidence: r.data.confidence || 0 });
+    }
     progEl.style.width = '100%';
-    if (raw.length === 0) {
-      statusEl.textContent = '⚠ Nič sa nepodarilo prečítať. Skús inú výseč.';
+
+    // Vyber najlepší: prefer non-empty, potom vyššia confidence
+    results.sort((a, b) => {
+      if ((a.text.length === 0) !== (b.text.length === 0)) return a.text.length === 0 ? 1 : -1;
+      return b.confidence - a.confidence;
+    });
+    const best = results[0];
+
+    if (!best || best.text.length === 0) {
+      statusEl.textContent = '⚠ Nič sa nepodarilo prečítať. Skús zmenšiť výseč len na číslice.';
       document.getElementById('ocrRun').disabled = false;
       return;
     }
-    statusEl.textContent = `Prečítané: ${raw} (${Math.round(result.data.confidence)}% istota)`;
-    document.getElementById('addValue').value = raw;
+
+    const conf = Math.round(best.confidence);
+    let confLabel = '';
+    if (conf >= 85) confLabel = '✓ vysoká istota';
+    else if (conf >= 70) confLabel = '~ stredná istota — overeniť';
+    else confLabel = '⚠ nízka istota — manuálne overeniť';
+    statusEl.textContent = `Prečítané: ${best.text} (${conf}%, ${confLabel})`;
+
+    document.getElementById('addValue').value = best.text;
     updateAddHint();
     document.getElementById('ocrRun').disabled = false;
+
+    // Ak nízka confidence — focus na input field aby user vedel hneď opraviť
+    if (conf < 75) {
+      const inp = document.getElementById('addValue');
+      inp.focus();
+      inp.select();
+    }
   } catch (e) {
     statusEl.textContent = '⚠ Chyba OCR: ' + e.message;
     document.getElementById('ocrRun').disabled = false;
