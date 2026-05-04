@@ -4551,7 +4551,9 @@ async function ocrRun() {
     const engineSel = document.getElementById('ocrEngine')?.value || 'auto';
     const ENGINES = {
       eng: { lang: 'eng', langPath: undefined, label: 'bežný' },
-      ssd: { lang: 'ssd', langPath: 'https://cdn.jsdelivr.net/gh/Shreeshrii/tessdata_ssd@master', label: 'LCD seven-segment' },
+      // ssd model je samohostený v root-e (same-origin) — vyhne sa SW issue
+      // s cachovaním cross-origin 11MB súborov na iOS Safari.
+      ssd: { lang: 'ssd', langPath: window.location.href.replace(/[^/]*$/, ''), label: 'LCD seven-segment' },
     };
     const engines = engineSel === 'auto' ? [ENGINES.eng, ENGINES.ssd]
                   : engineSel === 'eng'  ? [ENGINES.eng]
@@ -5499,26 +5501,25 @@ async function loadTesseract() {
   return window.Tesseract;
 }
 
-// Pre-fetch ssd.traineddata sami s reálnym progress trackingom (Response.body
-// getReader). Tesseract.js neposiela percentuálny progress, takže by user
-// videl iba "Sťahujem... 0%" bez pohybu. Po pre-fetchi do cache (rovnaký
-// CACHE_NAME ako service-worker), Tesseract dostane file z cache instantne.
+// Pre-fetch ssd.traineddata SAME-ORIGIN (samohostené v repo) s reálnym
+// progress trackingom. Tesseract.js neposiela percentuálny download progress
+// vlastnými event-mi, takže user by videl len "loading" bez pohybu.
+//
+// POZN.: ssd model je hostený v root-e (./ssd.traineddata) a nie cez CDN —
+// iOS Safari má issue s SW caching cross-origin 11MB súborov. Same-origin
+// to obchádza úplne.
 async function ensureSsdModelCached(onProgress, onAbort) {
-  const url = 'https://cdn.jsdelivr.net/gh/Shreeshrii/tessdata_ssd@master/ssd.traineddata';
-  const CACHE_NAME = 'spotreba-v1';
+  const url = './ssd.traineddata';
 
-  let cache;
+  // Skontroluj SW cache (rovnaký CACHE_NAME) — ak je už tam, skip download
   try {
-    cache = await caches.open(CACHE_NAME);
+    const cache = await caches.open('spotreba-v1');
     const cached = await cache.match(url);
     if (cached) {
       if (onProgress) onProgress(1);
-      return; // už máme
+      return;
     }
-  } catch (e) {
-    // Caches API zlyhá → idem rovno na fetch (Tesseract si poradí sám neskôr)
-    console.warn('Cache API not available:', e);
-  }
+  } catch (e) { /* ignore — pokračujeme s fetch */ }
 
   const ctrl = new AbortController();
   if (onAbort) onAbort(ctrl);
@@ -5537,23 +5538,8 @@ async function ensureSsdModelCached(onProgress, onAbort) {
     loaded += value.length;
     if (onProgress) onProgress(total > 0 ? loaded / total : null);
   }
-  const blob = new Blob(chunks);
-
-  // Cache pre Tesseract budúci fetch (cez náš SW cache-first). Nie kritické
-  // ak zlyhá — Tesseract by si stiahol znova, ale aspoň nie hneď zas.
-  if (cache) {
-    try {
-      const cacheable = new Response(blob, {
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': String(blob.size),
-        },
-      });
-      await cache.put(url, cacheable);
-    } catch (e) {
-      console.warn('Cache put failed (model still downloaded, just not persisted):', e);
-    }
-  }
+  // Po stiahnutí to už SW cache-uje sám (cache-first stratégia).
+  // Druhý a ďalšie volania ho dostanú instantne.
 }
 
 /* =============================================================
