@@ -1286,17 +1286,105 @@
   }
   .date-cal-btn:hover { background: var(--bg-3); }
   .date-cal-btn:active { transform: scale(0.95); }
-  .date-input-wrap input[type="date"] {
-    /* Skrytý native date input — slúži len ako "engine" pre showPicker(). */
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    opacity: 0;
-    pointer-events: none;
-    /* Pozíciovaný pri tlačidle aby native picker UI sa zobrazil pri ňom */
-    right: 0;
-    top: 100%;
+  /* Custom calendar (matching app design) */
+  .custom-cal {
+    margin-top: 10px;
+    background: var(--bg-2);
+    border: 0.5px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: var(--shadow-card);
+    animation: stepFade 0.18s ease;
   }
+  .cc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 8px;
+  }
+  .cc-month-label {
+    flex: 1;
+    text-align: center;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+    text-transform: capitalize;
+    font-feature-settings: "tnum";
+  }
+  .cc-nav {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--accent-strong);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 4px 14px;
+    border-radius: 8px;
+    line-height: 1;
+    font-weight: 400;
+    font-family: inherit;
+    transition: background 0.15s;
+  }
+  .cc-nav:hover { background: var(--bg-3); }
+  .cc-nav:active { transform: scale(0.92); }
+  .cc-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+  .cc-weekdays span {
+    text-align: center;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-3);
+    font-weight: 600;
+    padding: 4px 0;
+  }
+  .cc-weekdays .weekend { color: var(--bad-strong); }
+  .cc-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .cc-day {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--ink);
+    font-size: 14px;
+    font-family: inherit;
+    padding: 8px 0;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+    min-height: 36px;
+    font-feature-settings: "tnum";
+    transition: background 0.1s, color 0.1s;
+  }
+  .cc-day:hover:not(.selected) { background: var(--bg-3); }
+  .cc-day.outside { color: var(--ink-3); opacity: 0.45; }
+  .cc-day.weekend { color: var(--bad-strong); }
+  .cc-day.weekend.outside { opacity: 0.35; }
+  .cc-day.today {
+    font-weight: 700;
+    box-shadow: inset 0 0 0 1.5px var(--accent-strong);
+  }
+  .cc-day.selected {
+    background: var(--accent);
+    color: var(--btn-primary-text) !important;
+    font-weight: 700;
+  }
+  .cc-day.selected:hover { background: var(--accent-2); }
+  .cc-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    justify-content: space-between;
+  }
+  .cc-actions .btn { padding: 8px 14px; font-size: 13px; min-height: auto; }
 
   /* WIZARD (4-step add reading) */
   .wizard-header {
@@ -2175,12 +2263,29 @@
         <label>Dátum</label>
         <div class="date-input-wrap">
           <input type="text" id="addDateText" placeholder="napr. 1.5.2026" inputmode="numeric" autocomplete="off">
-          <button type="button" class="date-cal-btn" id="addDateCalBtn" aria-label="Otvoriť kalendár">
+          <button type="button" class="date-cal-btn" id="addDateCalBtn" aria-label="Otvoriť kalendár" aria-expanded="false">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           </button>
-          <input type="date" id="addDate" tabindex="-1" aria-hidden="true">
+          <input type="hidden" id="addDate">
         </div>
         <div class="field-hint" id="addDateHint" style="font-size: 11px; color: var(--ink-3); margin-top: 4px;">Formát: D.M.RRRR (napr. 1.5.2026), alebo otvor kalendár ikonou vpravo.</div>
+
+        <!-- Custom calendar popover (in-flow, collapses) -->
+        <div class="custom-cal hidden" id="customCal" role="dialog" aria-label="Vybrať dátum">
+          <div class="cc-header">
+            <button type="button" class="cc-nav" id="ccPrev" aria-label="Predošlý mesiac">‹</button>
+            <div class="cc-month-label" id="ccMonthLabel">—</div>
+            <button type="button" class="cc-nav" id="ccNext" aria-label="Ďalší mesiac">›</button>
+          </div>
+          <div class="cc-weekdays" aria-hidden="true">
+            <span>Po</span><span>Ut</span><span>St</span><span>Št</span><span>Pi</span><span class="weekend">So</span><span class="weekend">Ne</span>
+          </div>
+          <div class="cc-grid" id="ccGrid"></div>
+          <div class="cc-actions">
+            <button type="button" class="btn btn-ghost" id="ccCancel">Zavrieť</button>
+            <button type="button" class="btn" id="ccToday">Dnes</button>
+          </div>
+        </div>
       </div>
       <div class="field">
         <label>Poznámka (voliteľné)</label>
@@ -4096,13 +4201,8 @@ function openAddModal(presetMeterPk = null) {
   addPickedMeter = presetMeterPk;
 
   document.getElementById('addValue').addEventListener('input', updateAddHint);
-  document.getElementById('addDate').addEventListener('change', (e) => {
-    // Native picker selected new date → propagate to text input + hint
-    setAddDateValue(e.target.value);
-    updateAddHint();
-  });
   document.getElementById('addDateText').addEventListener('input', (e) => {
-    // User typed → parse and sync to hidden ISO date
+    // User typed → parse a sync to hidden ISO date
     const iso = parseDateInput(e.target.value);
     const dateInput = document.getElementById('addDate');
     if (iso) {
@@ -4117,14 +4217,20 @@ function openAddModal(presetMeterPk = null) {
     }
   });
   document.getElementById('addDateCalBtn').addEventListener('click', () => {
-    const dateInput = document.getElementById('addDate');
-    if (typeof dateInput.showPicker === 'function') {
-      try { dateInput.showPicker(); } catch (e) { dateInput.click(); }
+    const cal = document.getElementById('customCal');
+    if (cal.classList.contains('hidden')) {
+      ccOpen(document.getElementById('addDate').value);
     } else {
-      // Older browser fallback: focus + click triggers picker on iOS Safari
-      dateInput.focus();
-      dateInput.click();
+      ccClose();
     }
+  });
+  document.getElementById('ccPrev').addEventListener('click', ccPrev);
+  document.getElementById('ccNext').addEventListener('click', ccNext);
+  document.getElementById('ccCancel').addEventListener('click', ccClose);
+  document.getElementById('ccToday').addEventListener('click', () => {
+    setAddDateValue(todayIso());
+    ccClose();
+    updateAddHint();
   });
   updateAddHint();
 
@@ -4161,6 +4267,105 @@ function setAddDateValue(iso) {
   dateInput.value = iso || '';
   textInput.value = fmtDateShort(iso);
   textInput.classList.remove('invalid');
+}
+
+/* ── Custom calendar (in-flow popover) ─────────────────────────────────── */
+const CC_MONTHS_LONG = ['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
+let ccYear = null, ccMonth = null;  // 0-indexed month
+
+function todayIso() {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+}
+
+function ccOpen(initialIso) {
+  const cal = document.getElementById('customCal');
+  const btn = document.getElementById('addDateCalBtn');
+  cal.classList.remove('hidden');
+  btn.setAttribute('aria-expanded', 'true');
+  let d;
+  if (initialIso) {
+    const p = initialIso.split('-');
+    d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+  } else {
+    d = new Date();
+  }
+  ccYear = d.getFullYear();
+  ccMonth = d.getMonth();
+  ccRender();
+}
+
+function ccClose() {
+  document.getElementById('customCal').classList.add('hidden');
+  document.getElementById('addDateCalBtn').setAttribute('aria-expanded', 'false');
+}
+
+function ccPrev() {
+  ccMonth--;
+  if (ccMonth < 0) { ccMonth = 11; ccYear--; }
+  ccRender();
+}
+function ccNext() {
+  ccMonth++;
+  if (ccMonth > 11) { ccMonth = 0; ccYear++; }
+  ccRender();
+}
+
+function ccRender() {
+  document.getElementById('ccMonthLabel').textContent = `${CC_MONTHS_LONG[ccMonth]} ${ccYear}`;
+  const grid = document.getElementById('ccGrid');
+  grid.innerHTML = '';
+
+  // Mon-first weekday of the 1st: convert JS getDay (Sun=0) → Mon=0
+  const firstWd = (new Date(ccYear, ccMonth, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(ccYear, ccMonth + 1, 0).getDate();
+  const daysInPrev = new Date(ccYear, ccMonth, 0).getDate();
+
+  const today = todayIso();
+  const sel = document.getElementById('addDate').value;
+
+  // Previous month tail (greyed)
+  for (let i = firstWd - 1; i >= 0; i--) {
+    grid.appendChild(ccCell(daysInPrev - i, true, ccYear, ccMonth - 1));
+  }
+  // Current month
+  for (let day = 1; day <= daysInMonth; day++) {
+    const iso = `${ccYear}-${String(ccMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const cell = ccCell(day, false, ccYear, ccMonth);
+    if (iso === today) cell.classList.add('today');
+    if (iso === sel) cell.classList.add('selected');
+    grid.appendChild(cell);
+  }
+  // Next month head (fill to 35 or 42)
+  const total = grid.children.length;
+  const target = total <= 35 ? 35 : 42;
+  for (let day = 1; total + day - 1 < target; day++) {
+    grid.appendChild(ccCell(day, true, ccYear, ccMonth + 1));
+  }
+}
+
+function ccCell(day, outside, year, monthIdx) {
+  const cell = document.createElement('button');
+  cell.type = 'button';
+  cell.className = 'cc-day' + (outside ? ' outside' : '');
+  cell.textContent = day;
+
+  // Normalize year/month for outside cells
+  let realYear = year, realMonth = monthIdx;
+  if (realMonth < 0) { realMonth = 11; realYear--; }
+  if (realMonth > 11) { realMonth = 0; realYear++; }
+
+  // Weekend highlight
+  const wd = new Date(realYear, realMonth, day).getDay();
+  if (wd === 0 || wd === 6) cell.classList.add('weekend');
+
+  cell.addEventListener('click', () => {
+    const iso = `${realYear}-${String(realMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    setAddDateValue(iso);
+    ccClose();
+    if (typeof updateAddHint === 'function') updateAddHint();
+  });
+  return cell;
 }
 
 // WIZARD navigation + validation
