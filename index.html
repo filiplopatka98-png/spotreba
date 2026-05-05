@@ -1245,6 +1245,59 @@
     border-bottom: 1px dashed var(--line);
   }
 
+  /* Date input with text + calendar button */
+  .date-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .date-input-wrap input[type="text"] {
+    flex: 1;
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    color: var(--ink);
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
+    font-size: 14px;
+  }
+  .date-input-wrap input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent-strong);
+  }
+  .date-input-wrap input[type="text"].invalid {
+    border-color: var(--bad-strong);
+  }
+  .date-cal-btn {
+    appearance: none;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    color: var(--accent-strong);
+    padding: 0 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }
+  .date-cal-btn:hover { background: var(--bg-3); }
+  .date-cal-btn:active { transform: scale(0.95); }
+  .date-input-wrap input[type="date"] {
+    /* Skrytý native date input — slúži len ako "engine" pre showPicker(). */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    /* Pozíciovaný pri tlačidle aby native picker UI sa zobrazil pri ňom */
+    right: 0;
+    top: 100%;
+  }
+
   /* WIZARD (4-step add reading) */
   .wizard-header {
     display: flex;
@@ -2120,7 +2173,14 @@
       <p class="modal-sub">Kedy bol odpočet odčítaný? Voliteľne pridaj poznámku.</p>
       <div class="field">
         <label>Dátum</label>
-        <input type="date" id="addDate">
+        <div class="date-input-wrap">
+          <input type="text" id="addDateText" placeholder="napr. 1.5.2026" inputmode="numeric" autocomplete="off">
+          <button type="button" class="date-cal-btn" id="addDateCalBtn" aria-label="Otvoriť kalendár">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </button>
+          <input type="date" id="addDate" tabindex="-1" aria-hidden="true">
+        </div>
+        <div class="field-hint" id="addDateHint" style="font-size: 11px; color: var(--ink-3); margin-top: 4px;">Formát: D.M.RRRR (napr. 1.5.2026), alebo otvor kalendár ikonou vpravo.</div>
       </div>
       <div class="field">
         <label>Poznámka (voliteľné)</label>
@@ -4008,7 +4068,7 @@ let wizCurrentStep = 1;
 function openAddModal(presetMeterPk = null) {
   if (!ensureWritable()) return;
   document.getElementById('addModal').classList.remove('hidden');
-  document.getElementById('addDate').value = new Date().toISOString().split('T')[0];
+  setAddDateValue(new Date().toISOString().split('T')[0]);  // dnes, format-uje aj text input
   document.getElementById('addValue').value = '';
   document.getElementById('addNote').value = '';
   document.getElementById('addHint').textContent = '';
@@ -4036,11 +4096,71 @@ function openAddModal(presetMeterPk = null) {
   addPickedMeter = presetMeterPk;
 
   document.getElementById('addValue').addEventListener('input', updateAddHint);
-  document.getElementById('addDate').addEventListener('change', updateAddHint);
+  document.getElementById('addDate').addEventListener('change', (e) => {
+    // Native picker selected new date → propagate to text input + hint
+    setAddDateValue(e.target.value);
+    updateAddHint();
+  });
+  document.getElementById('addDateText').addEventListener('input', (e) => {
+    // User typed → parse and sync to hidden ISO date
+    const iso = parseDateInput(e.target.value);
+    const dateInput = document.getElementById('addDate');
+    if (iso) {
+      dateInput.value = iso;
+      e.target.classList.remove('invalid');
+      updateAddHint();
+    } else if (e.target.value.trim() === '') {
+      dateInput.value = '';
+      e.target.classList.remove('invalid');
+    } else {
+      e.target.classList.add('invalid');
+    }
+  });
+  document.getElementById('addDateCalBtn').addEventListener('click', () => {
+    const dateInput = document.getElementById('addDate');
+    if (typeof dateInput.showPicker === 'function') {
+      try { dateInput.showPicker(); } catch (e) { dateInput.click(); }
+    } else {
+      // Older browser fallback: focus + click triggers picker on iOS Safari
+      dateInput.focus();
+      dateInput.click();
+    }
+  });
   updateAddHint();
 
   // Štart na kroku 1 (alebo 2 ak meradlo už predvolené z dashboard click)
   wizGoTo(presetMeterPk ? 2 : 1);
+}
+
+// DATE input — text + native picker sync
+// Akceptuje D.M.RRRR / DD.MM.RRRR / D/M/RRRR / D-M-RRRR (slashes & dashes too)
+function parseDateInput(str) {
+  const m = (str || '').trim().match(/^(\d{1,2})[.\/\-]\s*(\d{1,2})[.\/\-]\s*(\d{4})$/);
+  if (!m) return null;
+  const day = parseInt(m[1]);
+  const mo = parseInt(m[2]);
+  const yr = parseInt(m[3]);
+  if (mo < 1 || mo > 12 || day < 1 || day > 31) return null;
+  // Verify date is valid (catches Feb 30 etc.)
+  const d = new Date(yr, mo - 1, day);
+  if (d.getFullYear() !== yr || d.getMonth() !== mo - 1 || d.getDate() !== day) return null;
+  return `${yr}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+function fmtDateShort(iso) {
+  // ISO YYYY-MM-DD → D.M.YYYY (Slovak short)
+  if (!iso) return '';
+  const parts = iso.split('-');
+  if (parts.length !== 3) return iso;
+  return `${parseInt(parts[2])}.${parseInt(parts[1])}.${parts[0]}`;
+}
+
+function setAddDateValue(iso) {
+  const dateInput = document.getElementById('addDate');
+  const textInput = document.getElementById('addDateText');
+  dateInput.value = iso || '';
+  textInput.value = fmtDateShort(iso);
+  textInput.classList.remove('invalid');
 }
 
 // WIZARD navigation + validation
@@ -4073,8 +4193,16 @@ function wizValidate(step) {
     if (isNaN(v)) { toast('Zadaj hodnotu', true); return false; }
   }
   if (step === 3) {
-    const d = document.getElementById('addDate').value;
-    if (!d) { toast('Vyber dátum', true); return false; }
+    // Re-parse text input pre prípad že user nedopísal úplne (sync mohol mať stale value)
+    const textVal = document.getElementById('addDateText').value.trim();
+    if (!textVal) { toast('Vyber alebo zadaj dátum', true); return false; }
+    const iso = parseDateInput(textVal);
+    if (!iso) {
+      toast('Neplatný formát dátumu — použi D.M.RRRR (napr. 1.5.2026)', true);
+      document.getElementById('addDateText').classList.add('invalid');
+      return false;
+    }
+    document.getElementById('addDate').value = iso;
   }
   return true;
 }
