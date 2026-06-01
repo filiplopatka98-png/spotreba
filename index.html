@@ -1196,6 +1196,34 @@
     font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
   }
 
+  /* Forgot-password link + recovery form */
+  .auth-forgot-row {
+    margin-top: 12px;
+    text-align: center;
+  }
+  .auth-link {
+    background: none;
+    border: none;
+    padding: 6px 8px;
+    color: var(--ink-2);
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    font-family: inherit;
+  }
+  .auth-link:hover { color: var(--ink); }
+  .auth-recovery-intro {
+    font-size: 14px;
+    color: var(--ink-2);
+    margin: 0 0 16px 0;
+    line-height: 1.5;
+  }
+  .auth-recovery-intro strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
   /* SYNC INDICATOR */
   .sync-indicator {
     display: inline-flex;
@@ -1800,16 +1828,41 @@
     <div id="authError" class="auth-error hidden"></div>
     <div id="authSuccess" class="auth-success hidden"></div>
 
-    <div class="field">
-      <label>Email</label>
-      <input type="email" id="authEmail" placeholder="meno@example.com" autocomplete="email">
-    </div>
-    <div class="field">
-      <label>Heslo</label>
-      <input type="password" id="authPassword" placeholder="aspoň 6 znakov" autocomplete="current-password">
+    <!-- DEFAULT FORM (signin/signup) -->
+    <div id="authFormDefault">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="authEmail" placeholder="meno@example.com" autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Heslo</label>
+        <input type="password" id="authPassword" placeholder="aspoň 6 znakov" autocomplete="current-password">
+      </div>
+
+      <button class="btn btn-primary" id="authSubmit" style="width: 100%; margin-top: 8px;">Prihlásiť sa</button>
+
+      <!-- Forgot password — visible only in signin mode -->
+      <div id="authForgotRow" class="auth-forgot-row">
+        <button type="button" class="auth-link" id="authForgotBtn">Zabudli ste heslo?</button>
+      </div>
     </div>
 
-    <button class="btn btn-primary" id="authSubmit" style="width: 100%; margin-top: 8px;">Prihlásiť sa</button>
+    <!-- RECOVERY FORM (set new password after email link) -->
+    <div id="authFormRecovery" class="hidden">
+      <p class="auth-recovery-intro">Nastav si nové heslo pre <strong id="authRecoveryEmail">—</strong>.</p>
+      <div class="field">
+        <label>Nové heslo</label>
+        <input type="password" id="authNewPassword" placeholder="aspoň 6 znakov" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label>Potvrď nové heslo</label>
+        <input type="password" id="authNewPassword2" placeholder="zopakuj heslo" autocomplete="new-password">
+      </div>
+      <button class="btn btn-primary" id="authRecoverySubmit" style="width: 100%; margin-top: 8px;">Nastaviť heslo</button>
+      <div class="auth-forgot-row">
+        <button type="button" class="auth-link" id="authRecoveryCancel">Zrušiť a prihlásiť sa</button>
+      </div>
+    </div>
 
     <div class="auth-bottom">
       Tvoje dáta sú v cloude (Supabase). Môžeš sa prihlásiť z viacerých zariadení.
@@ -2347,6 +2400,13 @@
 const SUPABASE_URL = 'https://qgsfslcimhzpncbzelzx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc';
 
+// Detekuj recovery flow SYNCHRONNE pred init Supabase — supabase-js počas
+// _initialize() parsuje URL hash, vyčistí ho cez history.replaceState a vyvolá
+// 'INITIAL_SESSION' event PRED 'PASSWORD_RECOVERY'. Bez tohto early-detect by
+// INITIAL_SESSION handler spustil startApp a appka by sa otvorila pred tým
+// ako si user nastaví nové heslo.
+const __isRecoveryUrl = window.location.hash.includes('type=recovery');
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 window.sb = sb;
 
@@ -2449,6 +2509,25 @@ async function signOut() {
 async function getCurrentUser() {
   const { data: { user } } = await sb.auth.getUser();
   return user;
+}
+
+// Pošle reset-password email cez Supabase. Užívateľ klikne link v maili,
+// vráti sa na našu URL s hashom #access_token=...&type=recovery, čo Supabase
+// JS auto-detectne a vyvolá onAuthStateChange event 'PASSWORD_RECOVERY'.
+// DÔLEŽITÉ: V Supabase Dashboard → Authentication → URL Configuration → Redirect URLs
+// musia byť povolené všetky URL kde sa appka beží (lokál + produkcia),
+// inak Supabase reset link nepustí ďalej.
+async function sendPasswordReset(email) {
+  const redirectTo = window.location.origin + window.location.pathname;
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) throw error;
+}
+
+// Volá sa keď user vyplní nové heslo po kliknutí na reset link.
+// V tomto bode má dočasnú recovery session a vie cez updateUser zmeniť heslo.
+async function updatePassword(newPassword) {
+  const { error } = await sb.auth.updateUser({ password: newPassword });
+  if (error) throw error;
 }
 
 /* ================ PULL: cloud → local ================ */
@@ -2890,18 +2969,122 @@ async function handleAuthSubmit() {
   }
 }
 
+// Stav recovery flow — true keď user prišiel cez reset-password link.
+// Bráni `onAuthStateChange(SIGNED_IN)` spustiť normálny startApp,
+// kým si nenastaví nové heslo.
+let inRecoveryFlow = false;
+
+async function handleForgotPassword() {
+  clearAuthMessages();
+  const email = document.getElementById('authEmail').value.trim();
+  if (!email) {
+    showAuthError('Zadaj email do políčka vyššie a klikni znova.');
+    document.getElementById('authEmail').focus();
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showAuthError('Email nemá platný formát.');
+    return;
+  }
+  const btn = document.getElementById('authForgotBtn');
+  btn.disabled = true;
+  btn.textContent = 'Odosielam...';
+  try {
+    await sendPasswordReset(email);
+    showAuthSuccess('Email s odkazom na reset hesla bol odoslaný na ' + email + '. Skontroluj schránku (aj spam).');
+  } catch (e) {
+    showAuthError(e.message || 'Reset hesla zlyhal');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zabudli ste heslo?';
+  }
+}
+
+async function handleRecoverySubmit() {
+  clearAuthMessages();
+  const p1 = document.getElementById('authNewPassword').value;
+  const p2 = document.getElementById('authNewPassword2').value;
+  if (!p1 || !p2) { showAuthError('Vyplň obe polia.'); return; }
+  if (p1.length < 6) { showAuthError('Heslo musí mať aspoň 6 znakov.'); return; }
+  if (p1 !== p2) { showAuthError('Heslá sa nezhodujú.'); return; }
+
+  const btn = document.getElementById('authRecoverySubmit');
+  btn.disabled = true;
+  btn.textContent = 'Ukladám...';
+  try {
+    await updatePassword(p1);
+    // Po úspechu: user má novú heslo a aktívnu session.
+    // Vyčistíme recovery flag a URL hash, appka pôjde normálne ďalej cez
+    // onAuthStateChange (ktoré stále má session a spustí startApp).
+    inRecoveryFlow = false;
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    showAuthSuccess('Heslo zmenené. Prihlasujem...');
+    // Force re-trigger app start s aktuálnou session
+    const { data: { session } } = await sb.auth.getSession();
+    if (session && session.user) {
+      Sync.user = session.user;
+      hideRecoveryForm();
+      await startApp();
+    }
+  } catch (e) {
+    showAuthError(e.message || 'Zmena hesla zlyhala');
+    btn.disabled = false;
+    btn.textContent = 'Nastaviť heslo';
+  }
+}
+
+// Zobrazí formulár pre nastavenie nového hesla (po prísune cez reset link).
+// Skryje tabs + default form, ukáže recovery form, predvyplní email.
+function showRecoveryForm(email) {
+  inRecoveryFlow = true;
+  document.querySelector('.auth-tabs').classList.add('hidden');
+  document.getElementById('authFormDefault').classList.add('hidden');
+  document.getElementById('authFormRecovery').classList.remove('hidden');
+  document.getElementById('authRecoveryEmail').textContent = email || '—';
+  clearAuthMessages();
+  showAuthScreen();
+  setTimeout(() => document.getElementById('authNewPassword').focus(), 50);
+}
+
+function hideRecoveryForm() {
+  document.querySelector('.auth-tabs').classList.remove('hidden');
+  document.getElementById('authFormDefault').classList.remove('hidden');
+  document.getElementById('authFormRecovery').classList.add('hidden');
+  document.getElementById('authNewPassword').value = '';
+  document.getElementById('authNewPassword2').value = '';
+}
+
 function setupAuthUI() {
   document.querySelectorAll('.auth-tab').forEach(t => {
     t.addEventListener('click', () => {
       authMode = t.dataset.mode;
       document.querySelectorAll('.auth-tab').forEach(x => x.classList.toggle('active', x === t));
       document.getElementById('authSubmit').textContent = authMode === 'signin' ? 'Prihlásiť sa' : 'Vytvoriť účet';
+      // Skry "Zabudli ste heslo?" v signup mode — pri registrácii heslo ešte neexistuje na reset.
+      document.getElementById('authForgotRow').classList.toggle('hidden', authMode !== 'signin');
       clearAuthMessages();
     });
   });
   document.getElementById('authSubmit').addEventListener('click', handleAuthSubmit);
   document.getElementById('authPassword').addEventListener('keydown', e => {
     if (e.key === 'Enter') handleAuthSubmit();
+  });
+  document.getElementById('authForgotBtn').addEventListener('click', handleForgotPassword);
+  document.getElementById('authRecoverySubmit').addEventListener('click', handleRecoverySubmit);
+  document.getElementById('authNewPassword2').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleRecoverySubmit();
+  });
+  document.getElementById('authRecoveryCancel').addEventListener('click', async () => {
+    // User si rozmyslel — odhlás recovery session, hash vyčisti, ukáž login form.
+    inRecoveryFlow = false;
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    await sb.auth.signOut();
+    hideRecoveryForm();
+    location.reload();
   });
 }
 
@@ -6328,9 +6511,25 @@ async function startApp() {
   try {
     await db.open();
 
-    // Auth state listener - reaguje na sign in / sign out / token refresh
+    // Auth state listener - reaguje na sign in / sign out / token refresh / password recovery
     sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        // User prišiel cez reset-password link. Má dočasnú session,
+        // ale namiesto normálneho startApp ukážeme formulár pre nové heslo.
+        Sync.user = session ? session.user : null;
+        showRecoveryForm(session && session.user ? session.user.email : '');
+        return;
+      }
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        // Ak URL bola recovery link, INITIAL_SESSION fire-uje PRED PASSWORD_RECOVERY,
+        // takže tu už musíme rozhodnúť že ideme do recovery flow a nie do startApp.
+        if (__isRecoveryUrl && session && session.user) {
+          Sync.user = session.user;
+          showRecoveryForm(session.user.email);
+          return;
+        }
+        // Ak už recovery prebieha (user zadáva nové heslo), neopakuj startApp.
+        if (inRecoveryFlow) return;
         if (session && session.user) {
           Sync.user = session.user;
           await startApp();
