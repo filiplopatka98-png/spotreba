@@ -1,0 +1,28 @@
+name: Keep Supabase alive
+
+# Free-tier Supabase uspí projekt po ~7 dňoch nečinnosti.
+# Tento workflow pošle každé 3 dni jeden ľahký request na REST API,
+# čo sa počíta ako aktivita a drží databázu "bdelú".
+
+on:
+  schedule:
+    - cron: '17 6 */3 * *'   # každé 3 dni o 06:17 UTC
+  workflow_dispatch:          # umožní spustiť ručne z GitHub UI (tab Actions)
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "https://qgsfslcimhzpncbzelzx.supabase.co/rest/v1/households?select=id&limit=1" \
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc")
+          echo "HTTP $code"
+          # 200 (prázdny výsledok kvôli RLS) je OK — request DB dosiahol.
+          # Fail len pri 5xx / sieťovej chybe.
+          if [ "$code" -ge 500 ] || [ "$code" -eq 000 ]; then
+            echo "Supabase ping zlyhal (HTTP $code)"
+            exit 1
+          fi
