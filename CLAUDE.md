@@ -9,7 +9,7 @@ Single-file HTML aplikácia na sledovanie spotreby energií (elektrina/FV/voda/p
 - **Single-file HTML** — všetko (HTML, CSS, vanilla JS) je v `index.html` (~5300 riadkov). Žiadny build step, žiadny npm.
 - Externé knižnice cez CDN (s SRI integrity hashmi):
   - Eager v `<head>`: Dexie 3.2.4, Supabase JS 2.45.4 (potrebné pri startApp pre auth + lokálnu DB)
-  - Lazy-loaded cez `loadScriptOnce(url, integrity)` helper: Chart.js 4.4.0 (preload v startApp), SheetJS 0.18.5 (na prvý Excel import/export)
+  - Lazy-loaded cez `loadScriptOnce(url, integrity)` helper: Chart.js 4.4.0 (preload v startApp), SheetJS 0.20.3 (na prvý Excel import/export) — pozor: SheetJS ide z `cdn.sheetjs.com` (nie jsdelivr, ktorý má max 0.18.5 s CVE), preto je host aj v CSP allowliste
 - PWA: `service-worker.js` (network-first pre app shell, cache-first pre CDN libs), `manifest.json`, kompletné ikony (SVG zdroj + PNG 16/32/180/192/512), iOS apple-touch-icon.
 - Cieľové prostredia: GitHub Pages (live), WebSupport (plánované), `python3 -m http.server 8000` (lokálne).
 
@@ -44,12 +44,13 @@ HTTP server je nutný (nie `file://`) kvôli CORS pri Supabase auth cookies.
 
 - Dom má lokálne flag `is_shared` (true = niekto mi ho zdieľa, je read-only).
 - Read-only enforcement: `body.ro-shared` CSS class skryje tlačidlá + €. JS guard `ensureWritable()` v mutation handleroch.
-- Share lifecycle: owner generuje single-use kód v `household_shares` (`code` set, `recipient_id NULL`); recipient claim cez RPC `claim_share_code(p_code)` (atomic, SECURITY DEFINER); revoke = DELETE z oboch strán.
+- Share lifecycle: owner generuje single-use kód v `household_shares` (`code` set, `recipient_id NULL`, `expires_at` = teraz+7 dní); kód sa generuje cez `crypto.getRandomValues()`; recipient claim cez RPC `claim_share_code(p_code)` (atomic, SECURITY DEFINER, odmieta expirované); revoke = DELETE z oboch strán.
+- **Migrácia `supabase/phase_c_share_expiry.sql`** pridáva `expires_at` + expiry check + pinuje `search_path=''` na oboch SECURITY DEFINER funkciách. Musí sa raz spustiť v Supabase SQL Editore.
 - Owner email pre banner sa resolvuje cez RPC `get_user_emails(p_ids[])` (SECURITY DEFINER, server-side filtruje len users s ktorými existuje share vzťah).
 
 ## Excel import/export
 
-- **SheetJS** (`xlsx@0.18.5`) lazy-loaded z CDN pri prvom kliku na Export/Import (cache-uje SW).
+- **SheetJS** (`xlsx@0.20.3` z `cdn.sheetjs.com`) lazy-loaded z CDN pri prvom kliku na Export/Import (cache-uje SW).
 - Header dynamický podľa `enabled_meters` aktívneho domu, fixed order: `plyn → voda → elektrina → fv-predaj`. Každé meradlo = pár stĺpcov (stav, spotreba).
 - Slovak date utils: `SK_MONTHS_GEN` (genitive: januára), `SK_MONTHS_NOM` (nominative: január), `parseDateMaybe()` (4 stratégie: Date object, Excel serial, Slovak string, ISO), `fmtDateSk()`.
 - **Replacement detection** pri importe: ak `current_stav < previous_stav AND spotreba > 0`, vytvorí nový `device` záznam s odhadnutým initial=0/final=prev_stav. Užívateľ ich má fine-tune-núť v Settings → Výmena merača.

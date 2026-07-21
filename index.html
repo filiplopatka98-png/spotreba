@@ -8,7 +8,7 @@
 <!-- Content Security Policy — defense-in-depth proti XSS / supply chain útokom -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com;
   connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net;
   img-src 'self' data: blob:;
   style-src 'self' 'unsafe-inline';
@@ -61,6 +61,11 @@
     }
   })();
 </script>
+<!-- Clickjacking ochrana pre GitHub Pages, kde .htaccess X-Frame-Options /
+     frame-ancestors neplatí. Ak nás niekto vnorí do <iframe>, vyskočíme na top. -->
+<script>
+  try { if (self !== top) top.location.href = self.location.href; } catch (e) { /* cross-origin frame — busting môže byť blokované, akceptujeme */ }
+</script>
 <!-- Eager: Dexie + Supabase potrebné pri startApp pre auth + lokálnu DB -->
 <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"
         integrity="sha384-vG8R9Zn5YZHCeXt9gLNp8MnsUCqmIy7HPxhdOdLGa/30/c8uZXFrrN0iKGID/ZvC"
@@ -72,6 +77,8 @@
 <!-- Šetrí ~300KB initial download. Chart.js sa pre-loadne hneď po auth pre rýchly prvý render. -->
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#f2f2f7" id="metaThemeColor">
+<!-- Dark-mode theme-color (light je vyššie, s id používaným JS-om) -->
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0f10">
 
 <!-- Favicons -->
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
@@ -81,6 +88,7 @@
 <!-- iOS / Safari home screen -->
 <link rel="apple-touch-icon" href="./icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Spotreba">
 <style>
@@ -619,6 +627,20 @@
   }
   .toast.error { background: var(--bad); color: #fff; }
   @keyframes toastIn { from { transform: translate(-50%, 12px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+  /* Toast s akčným tlačidlom (napr. Späť pri mazaní odpočtu) */
+  .toast.toast-with-action { display: inline-flex; align-items: center; gap: 14px; }
+  .toast-action {
+    background: rgba(0, 0, 0, 0.15);
+    color: inherit;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .toast-action:hover { background: rgba(0, 0, 0, 0.28); }
 
   /* HEADER ANNOTATION FOR DEVICE CHANGE */
   .device-banner {
@@ -660,7 +682,16 @@
       flex-wrap: wrap;
     }
     .sync-indicator { padding: 6px 8px; }
-    .sync-indicator #syncText { display: none; }
+    /* Text stavu sa vizuálne skryje, no ostáva v accessibility strome (nie color-only) */
+    .sync-indicator #syncText {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
     /* Tieto tlačidlá v hlavičke nedávajú zmysel na mobile */
     #btnImport, #btnExport, #btnAddTop { display: none; }
     /* Switcher zaberie celú šírku */
@@ -699,7 +730,7 @@
       height: 56px;
       border-radius: 50%;
       background: var(--accent);
-      color: var(--bg-1);
+      color: var(--accent-text); /* --bg-1 neexistoval → glyf dedil zlú farbu */
       border: none;
       font-size: 32px;
       align-items: center;
@@ -1628,6 +1659,7 @@
   .share-row-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
   .share-row-name { font-weight: 500; font-size: 14px; }
   .share-row-meta { font-size: 11px; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
+  .share-expired { color: var(--bad-strong); font-weight: 600; }
   .share-claim {
     display: flex;
     gap: 8px;
@@ -1798,9 +1830,80 @@
   .update-banner .btn-update:hover { background: var(--bg-2); }
   .update-banner.hidden { display: none; }
 
+  /* ===== Prístupnosť (a11y) ===== */
+
+  /* Reusable vizuálne-skrytý (screen-reader-only) helper */
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Skip link — skrytý mimo obrazovky, viditeľný pri fokuse cez klávesnicu */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 10000;
+    background: var(--accent-strong);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 0 0 8px 0;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .skip-link:focus {
+    left: 0;
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+  }
+
+  /* Viditeľný focus ring pre klávesnicovú navigáciu (≥3:1 kontrast) */
+  .btn:focus-visible,
+  .tab:focus-visible,
+  .bottom-tab:focus-visible,
+  .meter-card:focus-visible,
+  .hh-item:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 2px;
+  }
+  /* Pri fokuse myšou (nie klávesnicou) žiadny ring navyše */
+  .btn:focus:not(:focus-visible),
+  .tab:focus:not(:focus-visible),
+  .bottom-tab:focus:not(:focus-visible),
+  button:focus:not(:focus-visible),
+  a:focus:not(:focus-visible),
+  input:focus:not(:focus-visible),
+  select:focus:not(:focus-visible),
+  [tabindex]:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Rešpektuj prefers-reduced-motion — utíši aj nekonečný spin spinner */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
 </style>
 </head>
 <body>
+
+<!-- Skip link — preskočí navigáciu, prvý fokusovateľný prvok stránky -->
+<a href="#appRoot" class="skip-link">Preskočiť na obsah</a>
 
 <!-- STARTUP OVERLAY — počas initial sync z cloudu -->
 <div class="startup-overlay hidden" id="startupOverlay" role="status" aria-live="polite">
@@ -1825,17 +1928,17 @@
       <button class="auth-tab" data-mode="signup">Vytvoriť účet</button>
     </div>
 
-    <div id="authError" class="auth-error hidden"></div>
-    <div id="authSuccess" class="auth-success hidden"></div>
+    <div id="authError" class="auth-error hidden" role="alert"></div>
+    <div id="authSuccess" class="auth-success hidden" role="status"></div>
 
     <!-- DEFAULT FORM (signin/signup) -->
     <div id="authFormDefault">
       <div class="field">
-        <label>Email</label>
+        <label for="authEmail">Email</label>
         <input type="email" id="authEmail" placeholder="meno@example.com" autocomplete="email">
       </div>
       <div class="field">
-        <label>Heslo</label>
+        <label for="authPassword">Heslo</label>
         <input type="password" id="authPassword" placeholder="aspoň 6 znakov" autocomplete="current-password">
       </div>
 
@@ -1851,11 +1954,11 @@
     <div id="authFormRecovery" class="hidden">
       <p class="auth-recovery-intro">Nastav si nové heslo pre <strong id="authRecoveryEmail">—</strong>.</p>
       <div class="field">
-        <label>Nové heslo</label>
+        <label for="authNewPassword">Nové heslo</label>
         <input type="password" id="authNewPassword" placeholder="aspoň 6 znakov" autocomplete="new-password">
       </div>
       <div class="field">
-        <label>Potvrď nové heslo</label>
+        <label for="authNewPassword2">Potvrď nové heslo</label>
         <input type="password" id="authNewPassword2" placeholder="zopakuj heslo" autocomplete="new-password">
       </div>
       <button class="btn btn-primary" id="authRecoverySubmit" style="width: 100%; margin-top: 8px;">Nastaviť heslo</button>
@@ -1899,7 +2002,7 @@
     </div>
   </header>
 
-  <nav class="tabs">
+  <nav class="tabs" aria-label="Sekcie">
     <button class="tab active" data-tab="dashboard">Dashboard</button>
     <button class="tab" data-tab="history">História</button>
     <button class="tab" data-tab="charts">Grafy</button>
@@ -1913,6 +2016,7 @@
   </div>
 
   <!-- DASHBOARD -->
+  <main>
   <section id="tab-dashboard">
     <div class="section-title">
       <h2>Aktuálny stav</h2>
@@ -1926,7 +2030,7 @@
     </div>
     <div class="card">
       <div class="chart-wrap" style="height: 280px;">
-        <canvas id="chartCompare"></canvas>
+        <canvas id="chartCompare" role="img" aria-label="Graf porovnania spotreby po mesiacoch"></canvas>
       </div>
     </div>
 
@@ -1988,7 +2092,7 @@
         </select>
       </div>
       <div class="chart-wrap">
-        <canvas id="mainChart"></canvas>
+        <canvas id="mainChart" role="img" aria-label="Graf spotreby v čase"></canvas>
       </div>
     </div>
   </section>
@@ -2075,11 +2179,11 @@
         Ak je mesačná spotreba o viac než X % vyššia oproti priemeru rovnakého mesiaca z predchádzajúcich rokov, vznikne upozornenie.
       </p>
       <div class="field">
-        <label>Prah varovania (%)</label>
+        <label for="thresholdWarn">Prah varovania (%)</label>
         <input type="number" id="thresholdWarn" value="25" min="5" max="200">
       </div>
       <div class="field">
-        <label>Prah vážnej anomálie (%)</label>
+        <label for="thresholdSevere">Prah vážnej anomálie (%)</label>
         <input type="number" id="thresholdSevere" value="50" min="5" max="500">
       </div>
       <button class="btn btn-primary" id="btnSaveSettings">Uložiť</button>
@@ -2145,6 +2249,7 @@
       <button class="btn btn-danger" id="btnReset">Vymazať všetky dáta</button>
     </div>
   </section>
+  </main>
 
   <!-- BOTTOM NAVIGATION (mobile only) -->
   <nav class="bottom-tabs" id="bottomTabs" aria-label="Hlavná navigácia">
@@ -2162,7 +2267,7 @@
 </div>
 
 <!-- HOUSEHOLD WIZARD MODAL -->
-<div id="wizardModal" class="modal-overlay hidden">
+<div id="wizardModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wizardTitle">
   <div class="modal" style="max-width: 520px;">
     <h3 id="wizardTitle">Pridať dom</h3>
     <p class="modal-sub" id="wizardSub">Pomenuj dom a vyber meradlá, ktoré budeš sledovať.</p>
@@ -2170,11 +2275,11 @@
     <div class="wizard-step">
       <div class="wizard-step-title">1 · Základné údaje</div>
       <div class="field">
-        <label>Názov domu</label>
+        <label for="wizName">Názov domu</label>
         <input type="text" id="wizName" placeholder="napr. Rodičovský dom">
       </div>
       <div class="field">
-        <label>Adresa (voliteľné)</label>
+        <label for="wizAddress">Adresa (voliteľné)</label>
         <input type="text" id="wizAddress" placeholder="napr. Jozefov 12, Trnava">
       </div>
     </div>
@@ -2192,17 +2297,17 @@
 </div>
 
 <!-- EDIT HOUSEHOLD MODAL -->
-<div id="hhEditModal" class="modal-overlay hidden">
+<div id="hhEditModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="hhEditTitle">
   <div class="modal">
-    <h3>Upraviť dom</h3>
+    <h3 id="hhEditTitle">Upraviť dom</h3>
     <p class="modal-sub">Zmena meradiel ovplyvní len pre nové odpočty.</p>
 
     <div class="field">
-      <label>Názov</label>
+      <label for="hhEditName">Názov</label>
       <input type="text" id="hhEditName">
     </div>
     <div class="field">
-      <label>Adresa</label>
+      <label for="hhEditAddress">Adresa</label>
       <input type="text" id="hhEditAddress">
     </div>
 
@@ -2214,9 +2319,9 @@
 </div>
 
 <!-- EXCEL IMPORT PREVIEW MODAL -->
-<div id="excelImportModal" class="modal-overlay hidden">
+<div id="excelImportModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="excelImportTitle">
   <div class="modal" style="max-width: 600px;">
-    <h3>Import z Excelu</h3>
+    <h3 id="excelImportTitle">Import z Excelu</h3>
     <div id="excelImportBody">
       <div class="share-empty">Načítavam…</div>
     </div>
@@ -2229,10 +2334,10 @@
 </div>
 
 <!-- SHARE CODE DISPLAY MODAL -->
-<div id="shareCodeModal" class="modal-overlay hidden">
+<div id="shareCodeModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shareCodeTitle">
   <div class="modal">
-    <h3>Pozvánka pre <span id="shareCodeHhName">—</span></h3>
-    <p class="modal-sub">Pošli tento kód osobe, ktorej chceš dať prístup. Kód je jednorazový.</p>
+    <h3 id="shareCodeTitle">Pozvánka pre <span id="shareCodeHhName">—</span></h3>
+    <p class="modal-sub">Pošli tento kód osobe, ktorej chceš dať prístup. Kód je jednorazový a platí 7 dní.</p>
 
     <div class="share-code-display" id="shareCodeText">SHARE-XXXX-XXXX</div>
 
@@ -2244,22 +2349,22 @@
 </div>
 
 <!-- EDIT READING MODAL -->
-<div id="editModal" class="modal-overlay hidden">
+<div id="editModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
   <div class="modal">
-    <h3>Upraviť odpočet</h3>
+    <h3 id="editModalTitle">Upraviť odpočet</h3>
     <p class="modal-sub" id="editSub"></p>
 
     <div class="field">
-      <label>Dátum</label>
+      <label for="editDate">Dátum</label>
       <input type="date" id="editDate">
     </div>
     <div class="field">
-      <label>Stav počítadla</label>
+      <label for="editValue">Stav počítadla</label>
       <input type="number" id="editValue" step="any">
       <div class="field-hint" id="editHint"></div>
     </div>
     <div class="field">
-      <label>Poznámka</label>
+      <label for="editNote">Poznámka</label>
       <input type="text" id="editNote">
     </div>
 
@@ -2271,7 +2376,7 @@
 </div>
 
 <!-- ADD READING MODAL — 4-step wizard -->
-<div id="addModal" class="modal-overlay hidden">
+<div id="addModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wizStepTitle">
   <div class="modal wizard-modal" style="max-width: 540px;">
     <div class="wizard-header">
       <h3 id="wizStepTitle">Nový odpočet</h3>
@@ -2303,7 +2408,7 @@
       </div>
 
       <div class="field">
-        <label>Stav počítadla</label>
+        <label for="addValue">Stav počítadla</label>
         <input type="number" id="addValue" step="any" inputmode="decimal" placeholder="napr. 21644">
         <div class="field-hint" id="addHint"></div>
       </div>
@@ -2313,7 +2418,7 @@
     <div class="wiz-step hidden" data-step="3">
       <p class="modal-sub">Kedy bol odpočet odčítaný? Voliteľne pridaj poznámku.</p>
       <div class="field">
-        <label>Dátum</label>
+        <label for="addDateText">Dátum</label>
         <div class="date-input-wrap">
           <input type="text" id="addDateText" placeholder="napr. 1.5.2026" inputmode="numeric" autocomplete="off">
           <button type="button" class="date-cal-btn" id="addDateCalBtn" aria-label="Otvoriť kalendár" aria-expanded="false">
@@ -2341,7 +2446,7 @@
         </div>
       </div>
       <div class="field">
-        <label>Poznámka (voliteľné)</label>
+        <label for="addNote">Poznámka (voliteľné)</label>
         <input type="text" id="addNote" placeholder="napr. fakturačný odpočet">
       </div>
     </div>
@@ -2361,25 +2466,25 @@
 </div>
 
 <!-- REPLACE DEVICE MODAL -->
-<div id="deviceModal" class="modal-overlay hidden">
+<div id="deviceModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deviceModalTitle">
   <div class="modal">
-    <h3>Výmena merača</h3>
+    <h3 id="deviceModalTitle">Výmena merača</h3>
     <p class="modal-sub">Zaznamenaj výmenu fyzického zariadenia. Stav starého a počiatočný stav nového môžu byť rôzne.</p>
 
     <div class="field">
-      <label>Meradlo</label>
+      <label for="devMeter">Meradlo</label>
       <select id="devMeter"></select>
     </div>
     <div class="field">
-      <label>Dátum výmeny</label>
+      <label for="devDate">Dátum výmeny</label>
       <input type="date" id="devDate">
     </div>
     <div class="field">
-      <label>Finálny stav starého merača</label>
+      <label for="devOldFinal">Finálny stav starého merača</label>
       <input type="number" id="devOldFinal" step="any">
     </div>
     <div class="field">
-      <label>Počiatočný stav nového merača</label>
+      <label for="devNewInit">Počiatočný stav nového merača</label>
       <input type="number" id="devNewInit" step="any" value="0">
     </div>
 
@@ -2409,6 +2514,26 @@ const __isRecoveryUrl = window.location.hash.includes('type=recovery');
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 window.sb = sb;
+
+/* ================ Pomenované konštanty ================ */
+const PUSH_DEBOUNCE_MS = 800;      // debounce lokálne zmeny → cloud push
+const CLOUD_BATCH_SIZE = 200;      // batch pre bulk insert/upsert do Supabase
+const TOAST_DURATION_MS = 2200;    // ako dlho je toast viditeľný
+const UNDO_DURATION_MS = 5000;     // okno na undo pri mazaní
+const DEFAULT_THRESHOLD_WARN = 25; // % nad priemer = varovanie
+const DEFAULT_THRESHOLD_SEVERE = 50; // % nad priemer = vážna anomália
+const SHARE_CODE_TTL_DAYS = 7;     // platnosť share kódu (viď claim_share_code)
+
+/* ================ Sync mutex ================ */
+// Serializuje push a pull, aby sa neprekrývali (debounced push počas pull-u by
+// mohol prepísať práve stiahnuté dáta). Každá operácia beží až po dobehnutí
+// predchádzajúcej.
+let _syncLock = Promise.resolve();
+function withSyncLock(fn) {
+  const run = _syncLock.then(fn, fn);
+  _syncLock = run.catch(() => {});
+  return run;
+}
 
 const Sync = {
   user: null,
@@ -2532,7 +2657,8 @@ async function updatePassword(newPassword) {
 
 /* ================ PULL: cloud → local ================ */
 
-async function pullFromCloud() {
+function pullFromCloud() { return withSyncLock(_pullFromCloud); }
+async function _pullFromCloud() {
   if (!Sync.user) return;
   setSyncStatus('syncing');
 
@@ -2738,7 +2864,8 @@ async function pullFromCloud() {
 
 /* ================ PUSH: local → cloud ================ */
 
-async function pushAll() {
+function pushAll() { return withSyncLock(_pushAll); }
+async function _pushAll() {
   if (!Sync.user) return;
   setSyncStatus('syncing');
 
@@ -2840,17 +2967,21 @@ async function pushAll() {
       }
     }
     // Bulk insert v batch po 200
-    for (let i = 0; i < toInsert.length; i += 200) {
-      const batch = toInsert.slice(i, i + 200);
+    for (let i = 0; i < toInsert.length; i += CLOUD_BATCH_SIZE) {
+      const batch = toInsert.slice(i, i + CLOUD_BATCH_SIZE);
       const { data, error } = await sb.from('readings').insert(batch.map(x => x.payload)).select();
       if (error) throw error;
       for (let j = 0; j < batch.length; j++) {
         setMap('readings', batch[j].localId, data[j].id);
       }
     }
-    // Updates
-    for (const u of toUpdate) {
-      const { error } = await sb.from('readings').update(u.payload).eq('id', u.cloudId);
+    // Updates — jeden batch upsert namiesto N sekvenčných UPDATE round-tripov.
+    // id v payloade → upsert updatne existujúci riadok (conflict na PK).
+    for (let i = 0; i < toUpdate.length; i += CLOUD_BATCH_SIZE) {
+      const batch = toUpdate.slice(i, i + CLOUD_BATCH_SIZE);
+      const { error } = await sb.from('readings').upsert(
+        batch.map(u => ({ id: u.cloudId, ...u.payload }))
+      );
       if (error) throw error;
     }
 
@@ -2885,10 +3016,13 @@ let pushTimer = null;
 function schedulePush() {
   if (!Sync.user) return;
   if (pushTimer) clearTimeout(pushTimer);
+  // Ak sme offline, nechaj indikátor na 'offline' (nie blikni syncing→error).
+  // Zmena je perzistovaná lokálne a pushne sa po 'online' evente.
+  if (!navigator.onLine) { setSyncStatus('offline'); return; }
   setSyncStatus('syncing');
   pushTimer = setTimeout(async () => {
     try { await pushAll(); } catch (e) { /* status už nastavený */ }
-  }, 800);
+  }, PUSH_DEBOUNCE_MS);
 }
 
 /* ================ Cloud delete handlers ================ */
@@ -2897,7 +3031,14 @@ async function cloudDeleteReading(localId) {
   const cloudId = Sync.maps.readings[localId];
   if (!cloudId || !Sync.user) return;
   const { error } = await sb.from('readings').delete().eq('id', cloudId);
-  if (error) console.error('cloud delete reading', error);
+  if (error) {
+    // Pri zlyhaní (offline/network) mapu NEČISTÍME — inak by pull cloud riadok
+    // znova stiahol ako "nový" (vzkriesenie zmazaného). Necháme retry na
+    // ďalší full-sync a upozorníme usera.
+    console.error('cloud delete reading', error);
+    toast('Zmazanie sa nepodarilo synchronizovať — skús neskôr', true);
+    return;
+  }
   delete Sync.rev.readings[cloudId];
   delete Sync.maps.readings[localId];
   await saveSyncMaps();
@@ -2908,7 +3049,12 @@ async function cloudDeleteHousehold(localId) {
   if (!cloudId || !Sync.user) return;
   // cascade na serveri zmaže meters, devices, readings
   const { error } = await sb.from('households').delete().eq('id', cloudId);
-  if (error) console.error('cloud delete household', error);
+  if (error) {
+    // Viď cloudDeleteReading — mapu čistíme len pri úspechu.
+    console.error('cloud delete household', error);
+    toast('Zmazanie domu sa nepodarilo synchronizovať — skús neskôr', true);
+    return;
+  }
   // vyčisti mapy pre tento dom
   delete Sync.rev.households[cloudId];
   delete Sync.maps.households[localId];
@@ -3485,9 +3631,22 @@ async function seedParentsHouseIfMissing() {
   await db.readings.bulkAdd(readings);
 }
 
+// Seed sú OSOBNÉ dáta (SEED_*) — v produkcii sa nesejú. Zapni len na dev cez
+// ?seed=1 v URL alebo localStorage 'spotreba-seed'='1'. Bez flagu nový user
+// štartuje prázdny a dom si vytvorí cez "+ Pridať dom".
+function isSeedEnabled() {
+  try {
+    const p = new URLSearchParams(location.search);
+    if (p.get('seed') === '1') { localStorage.setItem('spotreba-seed', '1'); return true; }
+    if (p.get('seed') === '0') { localStorage.removeItem('spotreba-seed'); return false; }
+    return localStorage.getItem('spotreba-seed') === '1';
+  } catch (e) { return false; }
+}
+
 async function seedIfEmpty() {
   const householdsCount = await db.households.count();
   if (householdsCount > 0) return;
+  if (!isSeedEnabled()) return; // v produkcii žiadne osobné seed dáta
   // Vytvor "Môj dom" s defaultnými dátami
   const hhId = await db.households.add({
     name: 'Môj dom',
@@ -3543,7 +3702,7 @@ async function seedIfEmpty() {
   await db.readings.bulkAdd(readings);
 
   await db.settings.put({ key: 'activeHousehold', value: hhId });
-  await db.settings.put({ key: 'thresholds', warn: 25, severe: 50 });
+  await db.settings.put({ key: 'thresholds', warn: DEFAULT_THRESHOLD_WARN, severe: DEFAULT_THRESHOLD_SEVERE });
 }
 
 /* =============================================================
@@ -3557,22 +3716,53 @@ async function getReadings(meterPk) {
   return rs;
 }
 
+// Parsuje 'YYYY-MM-DD' ako LOKÁLNU polnoc (nie UTC) — inak západne od UTC
+// padne odpočet z 1. dňa do zlého mesiaca (viď monthlyConsumption).
+function parseLocalDate(iso) {
+  if (iso instanceof Date) return iso;
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return new Date(iso);
+  return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+}
+
+// Jediný zdroj pravdy pre výpočet spotreby medzi dvoma stavmi — korektne cez
+// výmenu merača a odolne voči chýbajúcim/null device záznamom (partial sync,
+// import, zdieľaný dom). Chýbajúci device alebo null final/initial → best-effort
+// priamy rozdiel namiesto TypeError/NaN.
+function deltaBetween(prevVal, prevDeviceId, curVal, curDeviceId, devices) {
+  if (prevDeviceId === curDeviceId) return curVal - prevVal;
+  const oldDev = devices.find(d => d.id === prevDeviceId);
+  const newDev = devices.find(d => d.id === curDeviceId);
+  if (!oldDev || !newDev) return curVal - prevVal;
+  const oldFinal = oldDev.finalValue != null ? oldDev.finalValue : prevVal;
+  const newInit = newDev.initialValue != null ? newDev.initialValue : 0;
+  return (oldFinal - prevVal) + (curVal - newInit);
+}
+
+// Per-refresh memo cache. Počas jedného refresh() cyklu sa tá istá séria
+// (deltas/monthly) na meradlo počíta 4× a zakaždým znova číta IndexedDB.
+// Počas refresh-u cachujeme promisy; mimo refresh-u je cache null → čerstvý
+// výpočet (renderChart/updateAddHint volané ad-hoc dostanú aktuálne dáta).
+let _deltaCache = null;
+let _monthlyCache = null;
+function beginSeriesCache() { _deltaCache = new Map(); _monthlyCache = new Map(); }
+function endSeriesCache() { _deltaCache = null; _monthlyCache = null; }
+
 // Spočíta spotrebu medzi dvoma odpočtami, korektne cez výmenu merača.
 async function computeDeltas(meterPk) {
+  if (_deltaCache && _deltaCache.has(meterPk)) return _deltaCache.get(meterPk);
+  const p = _computeDeltas(meterPk);
+  if (_deltaCache) _deltaCache.set(meterPk, p);
+  return p;
+}
+async function _computeDeltas(meterPk) {
   const readings = await getReadings(meterPk);
   const devices = await db.devices.where('meterPk').equals(meterPk).toArray();
   const out = [];
   for (let i = 1; i < readings.length; i++) {
     const a = readings[i-1];
     const b = readings[i];
-    let delta;
-    if (a.deviceId === b.deviceId) {
-      delta = b.value - a.value;
-    } else {
-      const oldDev = devices.find(d => d.id === a.deviceId);
-      const newDev = devices.find(d => d.id === b.deviceId);
-      delta = (oldDev.finalValue - a.value) + (b.value - newDev.initialValue);
-    }
+    const delta = deltaBetween(a.value, a.deviceId, b.value, b.deviceId, devices);
     out.push({ from: a.date, to: b.date, delta, reading: b });
   }
   return out;
@@ -3580,11 +3770,17 @@ async function computeDeltas(meterPk) {
 
 // Mesačná spotreba normalizovaná na kalendárne mesiace (proporcionálne).
 async function monthlyConsumption(meterPk) {
+  if (_monthlyCache && _monthlyCache.has(meterPk)) return _monthlyCache.get(meterPk);
+  const p = _monthlyConsumption(meterPk);
+  if (_monthlyCache) _monthlyCache.set(meterPk, p);
+  return p;
+}
+async function _monthlyConsumption(meterPk) {
   const deltas = await computeDeltas(meterPk);
   const months = {};
   for (const { from, to, delta } of deltas) {
-    const dFrom = new Date(from);
-    const dTo = new Date(to);
+    const dFrom = parseLocalDate(from);
+    const dTo = parseLocalDate(to);
     const totalDays = (dTo - dFrom) / 86400000;
     if (totalDays <= 0) continue;
     const perDay = delta / totalDays;
@@ -3613,7 +3809,7 @@ async function yearlyConsumption(meterPk) {
 }
 
 async function detectAnomalies() {
-  const settings = await db.settings.get('thresholds') || { warn: 25, severe: 50 };
+  const settings = await db.settings.get('thresholds') || { warn: DEFAULT_THRESHOLD_WARN, severe: DEFAULT_THRESHOLD_SEVERE };
   const out = [];
   for (const m of State.meters) {
     const monthly = await monthlyConsumption(m.pk);
@@ -3793,13 +3989,15 @@ async function renderCompareChart() {
 
   if (labels.length === 0) {
     // žiadne historické dáta – zobraz placeholder
-    ctx.font = '14px Inter';
-    ctx.fillStyle = '#75726c';
+    const t0 = chartTheme();
+    ctx.font = '14px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = t0.muted;
     ctx.textAlign = 'center';
     ctx.fillText('Zatiaľ nemáš dáta k porovnaniu.', ctx.canvas.width / 2, ctx.canvas.height / 2);
     return;
   }
 
+  const t = chartTheme();
   compareChart = new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets },
@@ -3807,23 +4005,23 @@ async function renderCompareChart() {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: '#b8b3a9', font: { family: 'Inter' } } },
+        legend: { labels: { color: t.text } },
         title: {
           display: true,
           text: now.toLocaleDateString('sk-SK', { month: 'long' }).toUpperCase() + ' — porovnanie cez roky',
-          color: '#75726c', font: { family: 'JetBrains Mono', size: 11, weight: 'normal' }
+          color: t.muted, font: { size: 11, weight: 'normal' }
         },
         tooltip: {
-          backgroundColor: '#1d2024',
-          titleColor: '#f4ede4',
-          bodyColor: '#b8b3a9',
-          borderColor: '#383d44',
+          backgroundColor: t.tooltipBg,
+          titleColor: t.tooltipText,
+          bodyColor: t.text,
+          borderColor: t.tooltipBorder,
           borderWidth: 1
         }
       },
       scales: {
-        x: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } },
-        y: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } }
+        x: { ticks: { color: t.muted }, grid: { color: t.grid } },
+        y: { ticks: { color: t.muted }, grid: { color: t.grid } }
       }
     }
   });
@@ -3889,12 +4087,14 @@ function renderHistoryFilterPills() {
   pills.innerHTML = '';
   const all = document.createElement('button');
   all.className = 'filter-pill' + (historyState.meterFilter === 'all' ? ' active' : '');
+  all.setAttribute('aria-pressed', historyState.meterFilter === 'all' ? 'true' : 'false');
   all.textContent = 'Všetky';
   all.addEventListener('click', () => { historyState.meterFilter = 'all'; renderHistory(); });
   pills.appendChild(all);
   for (const m of State.meters) {
     const p = document.createElement('button');
     p.className = 'filter-pill' + (historyState.meterFilter === m.pk ? ' active' : '');
+    p.setAttribute('aria-pressed', historyState.meterFilter === m.pk ? 'true' : 'false');
     p.innerHTML = `<span class="pill-dot" style="background: ${m.color}"></span>${escHtml(m.name)}`;
     p.addEventListener('click', () => { historyState.meterFilter = m.pk; renderHistory(); });
     pills.appendChild(p);
@@ -3926,12 +4126,13 @@ async function renderHistory() {
   for (const m of metersToProcess) {
     const rs = await getReadings(m.pk);
     const deltas = await computeDeltas(m.pk);
+    // Map id→delta namiesto deltas.find() v cykle (bolo O(n²)).
+    const deltaById = new Map(deltas.map(d => [d.reading.id, d.delta]));
     for (const r of rs) {
-      const delta = deltas.find(d => d.reading.id === r.id);
       all.push({
         ...r,
         meter: m,
-        delta: delta ? delta.delta : null,
+        delta: deltaById.has(r.id) ? deltaById.get(r.id) : null,
         meterName: m.name
       });
     }
@@ -4005,12 +4206,24 @@ async function renderHistory() {
   tbody.querySelectorAll('button[data-action="delete"]').forEach(b => {
     b.addEventListener('click', async (e) => {
       const id = parseInt(e.currentTarget.dataset.id);
-      if (confirm('Zmazať tento odpočet?')) {
-        await cloudDeleteReading(id);
-        await db.readings.delete(id);
-        toast('Odpočet zmazaný');
+      // Optimistické mazanie + undo okno. Cloud delete ODLOŽÍME na koniec okna,
+      // takže Sync.maps.readings[id] ostáva nedotknutá počas undo → undo je len
+      // lacný lokálny re-insert (cloud riadok nikdy nezmizne, kým čakáme).
+      const r = await db.readings.get(id);
+      if (!r) return;                    // už zmazaný — nič nerob
+      await db.readings.delete(id);
+      await refresh();
+      // Vlastný closure per-mazanie: nezávislý timer + zachytený záznam `r`.
+      const cloudTimer = setTimeout(async () => {
+        await cloudDeleteReading(id);    // mapa je stále prítomná → zmaže cloud riadok
+      }, UNDO_DURATION_MS);
+      toastAction('Odpočet zmazaný', 'Späť', async () => {
+        clearTimeout(cloudTimer);        // zruš odložený cloud delete
+        await db.readings.put(r);        // re-insert s PÔVODNÝM id (mapa sedí)
         await refresh();
-      }
+        schedulePush();                  // udrž lokál↔cloud konzistentné
+        toast('Obnovené');
+      });
     });
   });
   tbody.querySelectorAll('button[data-action="edit"]').forEach(b => {
@@ -4038,7 +4251,7 @@ async function openEditModal(id) {
   document.getElementById('editNote').value = r.note || '';
   document.getElementById('editHint').textContent = '';
   document.getElementById('editHint').className = 'field-hint';
-  document.getElementById('editModal').classList.remove('hidden');
+  openModal(document.getElementById('editModal'));
 }
 
 async function updateEditHint() {
@@ -4063,7 +4276,6 @@ async function updateEditHint() {
   if (after && newDate >= after.date) issues.push(`Dátum musí byť pred ${fmtDate(after.date)}`);
 
   const devices = await db.devices.where('meterPk').equals(r.meterPk).toArray();
-  const myDev = devices.find(d => d.id === r.deviceId);
   if (before && before.deviceId === r.deviceId && newValue < before.value) {
     issues.push(`Hodnota nižšia než predchádzajúca (${fmtNum(before.value)})`);
   }
@@ -4075,13 +4287,7 @@ async function updateEditHint() {
     hint.className = 'field-hint bad';
     hint.textContent = '⚠ ' + issues.join(' · ');
   } else if (before) {
-    let delta;
-    if (before.deviceId === r.deviceId) {
-      delta = newValue - before.value;
-    } else {
-      const oldDev = devices.find(d => d.id === before.deviceId);
-      delta = (oldDev.finalValue - before.value) + (newValue - myDev.initialValue);
-    }
+    const delta = deltaBetween(before.value, before.deviceId, newValue, r.deviceId, devices);
     const days = Math.max(1, (new Date(newDate) - new Date(before.date)) / 86400000);
     hint.textContent = `Spotreba: ${fmtNum(delta, 0)} ${def.unit} za ${Math.round(days)} dní`;
   }
@@ -4105,14 +4311,14 @@ async function saveEdit() {
   if (after && newDate >= after.date) { toast('Dátum musí byť pred ' + fmtDate(after.date), true); return; }
 
   if (before && before.deviceId === r.deviceId && newValue < before.value) {
-    if (!confirm('Hodnota klesla pod predchádzajúcu. Naozaj?')) return;
+    if (!await confirmModal({ title: 'Potvrdiť uloženie', message: 'Hodnota klesla pod predchádzajúcu. Naozaj uložiť?' })) return;
   }
   if (after && after.deviceId === r.deviceId && newValue > after.value) {
-    if (!confirm('Hodnota stúpla nad nasledujúcu. Naozaj?')) return;
+    if (!await confirmModal({ title: 'Potvrdiť uloženie', message: 'Hodnota stúpla nad nasledujúcu. Naozaj uložiť?' })) return;
   }
 
   await db.readings.update(editingId, { date: newDate, value: newValue, note: newNote });
-  document.getElementById('editModal').classList.add('hidden');
+  closeModal(document.getElementById('editModal'));
   editingId = null;
   toast('Zmeny uložené');
   await refresh();
@@ -4158,8 +4364,8 @@ async function renderChart() {
 
   // Ak meradlo nie je v aktívnom dome, daj placeholder
   if (meterType !== 'electricity_net' && !meterPk) {
-    ctx.font = '14px Inter';
-    ctx.fillStyle = '#75726c';
+    ctx.font = '14px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = chartTheme().muted;
     ctx.textAlign = 'center';
     ctx.fillText('Toto meradlo nie je v aktívnom dome.', ctx.canvas.width / 2, ctx.canvas.height / 2);
     return;
@@ -4171,8 +4377,8 @@ async function renderChart() {
       const inMeter = meterByType('electricity_in');
       const outMeter = meterByType('electricity_out');
       if (!inMeter || !outMeter) {
-        ctx.font = '14px Inter';
-        ctx.fillStyle = '#75726c';
+        ctx.font = '14px -apple-system, system-ui, sans-serif';
+        ctx.fillStyle = chartTheme().muted;
         ctx.textAlign = 'center';
         ctx.fillText('Pre netto bilanciu treba aj odber aj predaj.', ctx.canvas.width / 2, ctx.canvas.height / 2);
         return;
@@ -4201,15 +4407,7 @@ async function renderChart() {
     let prev = null;
     for (const r of readings) {
       if (prev) {
-        let delta;
-        if (prev.deviceId === r.deviceId) {
-          delta = r.value - prev.value;
-        } else {
-          const oldDev = devices.find(d => d.id === prev.deviceId);
-          const newDev = devices.find(d => d.id === r.deviceId);
-          delta = (oldDev.finalValue - prev.value) + (r.value - newDev.initialValue);
-        }
-        cum += delta;
+        cum += deltaBetween(prev.value, prev.deviceId, r.value, r.deviceId, devices);
       } else {
         cum = 0;
       }
@@ -4288,17 +4486,33 @@ async function renderChart() {
   });
 }
 
+// Farby grafov z CSS premenných → grafy sledujú light/dark tému (predtým
+// natvrdo dark → v light móde nečitateľná legenda a stále tmavý tooltip).
+function chartTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n, fb) => (cs.getPropertyValue(n).trim() || fb);
+  return {
+    text: v('--ink-2', '#3c3c43'),
+    muted: v('--ink-3', '#6d6d72'),
+    grid: v('--line', 'rgba(60,60,67,0.18)'),
+    tooltipBg: v('--bg-2', '#ffffff'),
+    tooltipText: v('--ink', '#1c1c1e'),
+    tooltipBorder: v('--line-2', 'rgba(60,60,67,0.36)')
+  };
+}
+
 function chartOpts(unit) {
+  const t = chartTheme();
   return {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { labels: { color: '#b8b3a9' } },
+      legend: { labels: { color: t.text } },
       tooltip: {
-        backgroundColor: '#1d2024',
-        titleColor: '#f4ede4',
-        bodyColor: '#b8b3a9',
-        borderColor: '#383d44',
+        backgroundColor: t.tooltipBg,
+        titleColor: t.tooltipText,
+        bodyColor: t.text,
+        borderColor: t.tooltipBorder,
         borderWidth: 1,
         callbacks: {
           label: (c) => `${c.dataset.label}: ${fmtNum(c.parsed.y, 0)} ${unit}`
@@ -4306,8 +4520,8 @@ function chartOpts(unit) {
       }
     },
     scales: {
-      x: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } },
-      y: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } }
+      x: { ticks: { color: t.muted }, grid: { color: t.grid } },
+      y: { ticks: { color: t.muted }, grid: { color: t.grid } }
     }
   };
 }
@@ -4355,7 +4569,17 @@ let wizCurrentStep = 1;
 
 function openAddModal(presetMeterPk = null) {
   if (!ensureWritable()) return;
-  document.getElementById('addModal').classList.remove('hidden');
+  // Bez domu / meradiel je wizard prázdny a slepý — nasmeruj usera namiesto
+  // otvorenia mŕtveho modálu.
+  if (!State.household) {
+    toast('Najprv pridaj dom (menu vľavo hore → Pridať dom)', true);
+    return;
+  }
+  if (!State.meters || State.meters.length === 0) {
+    toast('Tento dom nemá žiadne meradlá', true);
+    return;
+  }
+  openModal(document.getElementById('addModal'));
   setAddDateValue(new Date().toISOString().split('T')[0]);  // dnes, format-uje aj text input
   document.getElementById('addValue').value = '';
   document.getElementById('addNote').value = '';
@@ -4383,38 +4607,44 @@ function openAddModal(presetMeterPk = null) {
   }
   addPickedMeter = presetMeterPk;
 
-  document.getElementById('addValue').addEventListener('input', updateAddHint);
-  document.getElementById('addDateText').addEventListener('input', (e) => {
-    // User typed → parse a sync to hidden ISO date
-    const iso = parseDateInput(e.target.value);
-    const dateInput = document.getElementById('addDate');
-    if (iso) {
-      dateInput.value = iso;
-      e.target.classList.remove('invalid');
-      updateAddHint();
-    } else if (e.target.value.trim() === '') {
-      dateInput.value = '';
-      e.target.classList.remove('invalid');
-    } else {
-      e.target.classList.add('invalid');
-    }
-  });
-  document.getElementById('addDateCalBtn').addEventListener('click', () => {
-    const cal = document.getElementById('customCal');
-    if (cal.classList.contains('hidden')) {
-      ccOpen(document.getElementById('addDate').value);
-    } else {
+  // Listenery naviazať IBA RAZ — inak sa pri každom otvorení modálu nakopia
+  // duplikáty (updateAddHint by bežal N× na klávesu, kalendár by skákal o N
+  // mesiacov na klik).
+  if (!openAddModal._bound) {
+    openAddModal._bound = true;
+    document.getElementById('addValue').addEventListener('input', updateAddHint);
+    document.getElementById('addDateText').addEventListener('input', (e) => {
+      // User typed → parse a sync to hidden ISO date
+      const iso = parseDateInput(e.target.value);
+      const dateInput = document.getElementById('addDate');
+      if (iso) {
+        dateInput.value = iso;
+        e.target.classList.remove('invalid');
+        updateAddHint();
+      } else if (e.target.value.trim() === '') {
+        dateInput.value = '';
+        e.target.classList.remove('invalid');
+      } else {
+        e.target.classList.add('invalid');
+      }
+    });
+    document.getElementById('addDateCalBtn').addEventListener('click', () => {
+      const cal = document.getElementById('customCal');
+      if (cal.classList.contains('hidden')) {
+        ccOpen(document.getElementById('addDate').value);
+      } else {
+        ccClose();
+      }
+    });
+    document.getElementById('ccPrev').addEventListener('click', ccPrev);
+    document.getElementById('ccNext').addEventListener('click', ccNext);
+    document.getElementById('ccCancel').addEventListener('click', ccClose);
+    document.getElementById('ccToday').addEventListener('click', () => {
+      setAddDateValue(todayIso());
       ccClose();
-    }
-  });
-  document.getElementById('ccPrev').addEventListener('click', ccPrev);
-  document.getElementById('ccNext').addEventListener('click', ccNext);
-  document.getElementById('ccCancel').addEventListener('click', ccClose);
-  document.getElementById('ccToday').addEventListener('click', () => {
-    setAddDateValue(todayIso());
-    ccClose();
-    updateAddHint();
-  });
+      updateAddHint();
+    });
+  }
   updateAddHint();
 
   // Štart na kroku 1 (alebo 2 ak meradlo už predvolené z dashboard click)
@@ -4663,7 +4893,7 @@ async function updateAddHint() {
       return;
     }
   } else if (lastDev && activeDev) {
-    delta = (lastDev.finalValue - last.value) + (value - activeDev.initialValue);
+    delta = deltaBetween(last.value, lastDev.id, value, activeDev.id, [lastDev, activeDev]);
   } else {
     return;
   }
@@ -4705,7 +4935,7 @@ async function saveReading() {
   if (!activeDev) { toast('Neexistuje aktívne zariadenie', true); return; }
 
   if (last && last.deviceId === activeDev.id && value < last.value) {
-    if (!confirm('Hodnota je nižšia než predchádzajúca. Naozaj uložiť?')) return;
+    if (!await confirmModal({ title: 'Potvrdiť uloženie', message: 'Hodnota je nižšia než predchádzajúca. Naozaj uložiť?' })) return;
   }
 
   await db.readings.add({
@@ -4714,7 +4944,7 @@ async function saveReading() {
     deviceId: activeDev.id,
     date, value, note
   });
-  document.getElementById('addModal').classList.add('hidden');
+  closeModal(document.getElementById('addModal'));
   toast('Odpočet uložený');
   await refresh();
   schedulePush();
@@ -4726,7 +4956,7 @@ async function saveReading() {
 
 function openDeviceModal() {
   if (!ensureWritable()) return;
-  document.getElementById('deviceModal').classList.remove('hidden');
+  openModal(document.getElementById('deviceModal'));
   document.getElementById('devDate').value = new Date().toISOString().split('T')[0];
   // populate meter select
   const sel = document.getElementById('devMeter');
@@ -4756,7 +4986,7 @@ async function saveDevice() {
     meterPk,
     installedDate: date, initialValue: newInit, replacedDate: null, finalValue: null
   });
-  document.getElementById('deviceModal').classList.add('hidden');
+  closeModal(document.getElementById('deviceModal'));
   toast('Výmena zaznamenaná');
   await refresh();
   schedulePush();
@@ -4785,10 +5015,43 @@ async function exportData() {
   toast('Export hotový');
 }
 
+// Zmaže VLASTNÉ cloud dáta usera (households → cascade na meters/devices/
+// readings) + user_settings. Zdieľané domy (cudzí owner) sa NEmažú — nie sú
+// pod naším user_id. Používa import a reset, aby po nich cloud nezostal
+// nekonzistentný (staré riadky by inak pull znova stiahol).
+async function wipeCloudOwnData() {
+  if (!Sync.user) return;
+  const { error } = await sb.from('households').delete().eq('user_id', Sync.user.id);
+  if (error) throw error;
+  await sb.from('user_settings').delete().eq('user_id', Sync.user.id);
+}
+
+// Spoločný záver pre import/reset: (voliteľne) vyčisti cloud, potom pushni
+// čerstvý lokálny stav. Offline → wipe sa preskočí, upozorní usera.
+async function reconcileCloudAfterLocalReplace(wipeCloud) {
+  await loadSyncMaps(); // syncMaps boli v db.settings.clear() zmazané → prázdne mapy
+  if (wipeCloud && Sync.user) {
+    if (navigator.onLine) {
+      try {
+        await withSyncLock(wipeCloudOwnData);
+      } catch (e) {
+        console.error('cloud wipe zlyhal', e);
+        toast('Lokálne OK, ale čistenie cloudu zlyhalo — sprav plnú synchronizáciu', true);
+      }
+    } else {
+      toast('Offline — cloud sa zosúladí po pripojení (sprav plnú synchronizáciu)', true);
+    }
+  }
+  await loadActiveHousehold();
+  await refresh();
+  renderHouseholdSwitcher();
+  schedulePush();
+}
+
 async function importData(file) {
   const text = await file.text();
   const data = JSON.parse(text);
-  if (!confirm('Import nahradí všetky aktuálne dáta. Pokračovať?')) return;
+  if (!await confirmModal({ title: 'Importovať dáta', message: 'Import nahradí všetky aktuálne dáta — lokálne aj v cloude. Pokračovať?', confirmLabel: 'Importovať', danger: true })) return;
 
   await db.households.clear();
   await db.meters.clear();
@@ -4850,23 +5113,23 @@ async function importData(file) {
   }
 
   toast('Import hotový');
-  await loadActiveHousehold();
-  await refresh();
-  renderHouseholdSwitcher();
+  // db.settings.clear() zmazal aj 'syncMaps'. Import NAHRÁDZA všetko → vyčisti
+  // vlastné cloud dáta a pushni čerstvý stav (žiadne duplikáty/UPDATE cudzích
+  // riadkov podľa starých cloudId).
+  await reconcileCloudAfterLocalReplace(true);
 }
 
 async function resetAll() {
-  if (!confirm('Naozaj vymazať VŠETKY dáta? Nedá sa vrátiť späť.')) return;
+  if (!await confirmModal({ title: 'Vymazať všetky dáta', message: 'Naozaj vymazať VŠETKY dáta (lokálne aj v cloude)? Nedá sa vrátiť späť.', confirmLabel: 'Vymazať všetko', danger: true })) return;
   await db.households.clear();
   await db.meters.clear();
   await db.devices.clear();
   await db.readings.clear();
   await db.settings.clear();
   await seedIfEmpty();
-  await loadActiveHousehold();
-  toast('Reset hotový — obnovené východiskové dáta');
-  await refresh();
-  renderHouseholdSwitcher();
+  toast('Reset hotový');
+  // Reset = "vymazať VŠETKY dáta" → vyčisti aj cloud, inak by pull dáta vrátil.
+  await reconcileCloudAfterLocalReplace(true);
 }
 
 /* =============================================================
@@ -4874,12 +5137,238 @@ async function resetAll() {
    ============================================================= */
 
 function toast(msg, isError = false) {
+  // Live region kontajner (vytvorí sa raz) — oznamovač pre čítačky obrazovky
+  let region = document.getElementById('toastRegion');
+  if (!region) {
+    region = document.createElement('div');
+    region.id = 'toastRegion';
+    region.setAttribute('aria-live', 'polite');
+    region.setAttribute('aria-atomic', 'false');
+    document.body.appendChild(region);
+  }
   const t = document.createElement('div');
   t.className = 'toast' + (isError ? ' error' : '');
+  // Chyba = assertive (alert), úspech = polite (status)
+  t.setAttribute('role', isError ? 'alert' : 'status');
   t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2200);
+  region.appendChild(t);
+  setTimeout(() => t.remove(), TOAST_DURATION_MS);
 }
+
+// Toast s akčným tlačidlom (undo). Kliknutie na tlačidlo zavolá onAction()
+// a toast zmizne; inak sa sám odstráni po `duration`. Text ide cez textContent
+// (žiadny XSS). Každé volanie má vlastný closure (nezávislé timery).
+function toastAction(msg, actionLabel, onAction, duration = UNDO_DURATION_MS) {
+  let region = document.getElementById('toastRegion');
+  if (!region) {
+    region = document.createElement('div');
+    region.id = 'toastRegion';
+    region.setAttribute('aria-live', 'polite');
+    region.setAttribute('aria-atomic', 'false');
+    document.body.appendChild(region);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast toast-with-action';
+  t.setAttribute('role', 'status');
+  const span = document.createElement('span');
+  span.textContent = msg;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-action';
+  btn.textContent = actionLabel;
+  let done = false;
+  const remove = () => { if (t.parentNode) t.remove(); };
+  const timer = setTimeout(() => { done = true; remove(); }, duration);
+  btn.addEventListener('click', () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    remove();
+    onAction();
+  });
+  t.appendChild(span);
+  t.appendChild(btn);
+  region.appendChild(t);
+}
+
+
+/* =============================================================
+   CONFIRM / ALERT MODÁLY — vlastná náhrada natívnych confirm()/alert().
+   Vracajú Promise. Kľúčová garancia: resolve zavolá práve raz, a keď sa
+   overlay skryje AKOUKOĽVEK cestou (Escape, klik mimo, Zrušiť) → resolve(false).
+   Sledujeme to MutationObserverom na .class overlaya (globálny Escape handler
+   volá closeModal → pridá .hidden → observer → resolve(false)).
+   ============================================================= */
+let _confirmModalEl = null;
+function ensureConfirmModal() {
+  if (_confirmModalEl && document.body.contains(_confirmModalEl)) return _confirmModalEl;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay hidden';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'confirmModalTitle');
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3 id="confirmModalTitle"></h3>
+      <p class="modal-sub" id="confirmModalMsg"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="confirmModalCancel" type="button"></button>
+        <button class="btn" id="confirmModalConfirm" type="button"></button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  _confirmModalEl = overlay;
+  return overlay;
+}
+
+function confirmModal({ title, message, confirmLabel = 'Potvrdiť', cancelLabel = 'Zrušiť', danger = false }) {
+  return new Promise((resolve) => {
+    const overlay = ensureConfirmModal();
+    const titleEl = overlay.querySelector('#confirmModalTitle');
+    const msgEl = overlay.querySelector('#confirmModalMsg');
+    const cancelBtn = overlay.querySelector('#confirmModalCancel');
+    const confirmBtn = overlay.querySelector('#confirmModalConfirm');
+
+    titleEl.textContent = title || '';
+    msgEl.textContent = message || '';           // textContent → bezpečné voči XSS
+    cancelBtn.textContent = cancelLabel;
+    cancelBtn.style.display = '';
+    confirmBtn.textContent = confirmLabel;
+    confirmBtn.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+
+    let settled = false;
+    let observer = null;
+    const onConfirm = () => finish(true);
+    const onCancel = () => finish(false);
+    const onBackdrop = (e) => { if (e.target === overlay) finish(false); };
+    function finish(result) {
+      if (settled) return;               // resolve práve raz
+      settled = true;
+      if (observer) observer.disconnect();
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onBackdrop);
+      if (!overlay.classList.contains('hidden')) closeModal(overlay);
+      resolve(result);
+    }
+
+    // Keď sa overlay skryje inou cestou (Escape) → default resolve(false)
+    observer = new MutationObserver(() => {
+      if (overlay.classList.contains('hidden')) finish(false);
+    });
+    observer.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onBackdrop);
+
+    openModal(overlay);
+    // Pri deštruktívnych dialógoch je bezpečnejší default fokus na Zrušiť
+    if (danger) cancelBtn.focus();
+  });
+}
+
+function alertModal({ title, message, okLabel = 'OK' }) {
+  return new Promise((resolve) => {
+    const overlay = ensureConfirmModal();
+    const titleEl = overlay.querySelector('#confirmModalTitle');
+    const msgEl = overlay.querySelector('#confirmModalMsg');
+    const cancelBtn = overlay.querySelector('#confirmModalCancel');
+    const confirmBtn = overlay.querySelector('#confirmModalConfirm');
+
+    titleEl.textContent = title || '';
+    msgEl.textContent = message || '';
+    cancelBtn.style.display = 'none';            // alert má len jedno tlačidlo
+    confirmBtn.textContent = okLabel;
+    confirmBtn.className = 'btn btn-primary';
+
+    let settled = false;
+    let observer = null;
+    const onConfirm = () => finish();
+    const onBackdrop = (e) => { if (e.target === overlay) finish(); };
+    function finish() {
+      if (settled) return;
+      settled = true;
+      if (observer) observer.disconnect();
+      confirmBtn.removeEventListener('click', onConfirm);
+      overlay.removeEventListener('click', onBackdrop);
+      cancelBtn.style.display = '';               // obnov pre budúce confirm dialógy
+      if (!overlay.classList.contains('hidden')) closeModal(overlay);
+      resolve();
+    }
+    observer = new MutationObserver(() => {
+      if (overlay.classList.contains('hidden')) finish();
+    });
+    observer.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+
+    confirmBtn.addEventListener('click', onConfirm);
+    overlay.addEventListener('click', onBackdrop);
+
+    openModal(overlay);
+  });
+}
+
+
+/* =============================================================
+   MODÁLY — správa fokusu (a11y): presun fokusu dnu, trap Tab,
+   Escape zavrie, návrat fokusu na otvárača po zavretí.
+   openModal/closeModal používajú existujúce .hidden prepínanie.
+   ============================================================= */
+const MODAL_FOCUSABLE_SEL = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getModalFocusable(container) {
+  // Len viditeľné prvky (wizard skrýva kroky cez .hidden → offsetParent === null)
+  return Array.from(container.querySelectorAll(MODAL_FOCUSABLE_SEL))
+    .filter(el => el.offsetParent !== null);
+}
+
+function openModal(overlay) {
+  if (!overlay) return;
+  // Zapamätaj otvárača, aby sme vrátili fokus po zavretí
+  overlay.__opener = document.activeElement;
+  overlay.classList.remove('hidden');
+  const focusables = getModalFocusable(overlay);
+  if (focusables.length) {
+    focusables[0].focus();
+  } else {
+    const modal = overlay.querySelector('.modal') || overlay;
+    modal.setAttribute('tabindex', '-1');
+    modal.focus();
+  }
+}
+
+function closeModal(overlay) {
+  if (!overlay) return;
+  overlay.classList.add('hidden');
+  const opener = overlay.__opener;
+  overlay.__opener = null;
+  if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
+    opener.focus();
+  }
+}
+
+// Globálny keydown: Escape zavrie najvrchnejší otvorený modal; Tab je uväznený vnútri
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' && e.key !== 'Tab') return;
+  const open = Array.from(document.querySelectorAll('.modal-overlay:not(.hidden)')).pop();
+  if (!open) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeModal(open);
+    return;
+  }
+  // Tab-trap vnútri modalu
+  const focusables = getModalFocusable(open);
+  if (!focusables.length) { e.preventDefault(); return; }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  if (e.shiftKey) {
+    if (active === first || !open.contains(active)) { e.preventDefault(); last.focus(); }
+  } else {
+    if (active === last || !open.contains(active)) { e.preventDefault(); first.focus(); }
+  }
+});
 
 
 /* =============================================================
@@ -4995,12 +5484,15 @@ async function saveTariffs() {
 async function renderDashboardCosts() {
   const tariffs = await getTariffs();
   const cards = document.querySelectorAll('.meter-card');
-  cards.forEach(async card => {
+  // for...of + await namiesto forEach(async …) — inak funkcia dobehne skôr,
+  // než sa cost riadky vložia (nedeterministické poradie voči ďalšiemu renderu).
+  // monthlyConsumption je počas refresh-u memoizovaná (viď beginSeriesCache).
+  for (const card of cards) {
     const type = card.dataset.type;
     const tariff = tariffs[type];
-    if (tariff == null) return;
+    if (tariff == null) continue;
     const m = meterByType(type);
-    if (!m) return;
+    if (!m) continue;
     const monthly = await monthlyConsumption(m.pk);
     const now = new Date();
     const curYM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -5013,11 +5505,17 @@ async function renderDashboardCosts() {
       c.innerHTML = `≈ <strong>${fmtCost(cost)}</strong> tento mesiac`;
       meta.parentNode.insertBefore(c, meta);
     }
-  });
+  }
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('.tab, .bottom-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.tab, .bottom-tab').forEach(t => {
+    const isActive = t.dataset.tab === tab;
+    t.classList.toggle('active', isActive);
+    // aria-current oznámi aktívny tab čítačkám obrazovky
+    if (isActive) t.setAttribute('aria-current', 'page');
+    else t.removeAttribute('aria-current');
+  });
   document.querySelectorAll('section[id^="tab-"]').forEach(s => {
     s.classList.toggle('hidden', s.id !== 'tab-' + tab);
   });
@@ -5031,20 +5529,25 @@ function switchTab(tab) {
 }
 
 async function loadSettings() {
-  const s = await db.settings.get('thresholds') || { warn: 25, severe: 50 };
+  const s = await db.settings.get('thresholds') || { warn: DEFAULT_THRESHOLD_WARN, severe: DEFAULT_THRESHOLD_SEVERE };
   document.getElementById('thresholdWarn').value = s.warn;
   document.getElementById('thresholdSevere').value = s.severe;
   await renderTariffSettings();
 }
 
 async function refresh() {
-  const active = document.querySelector('.tab.active').dataset.tab;
-  if (active === 'dashboard') { await renderDashboard(); await renderDashboardCosts(); }
-  if (active === 'history') await renderHistory();
-  if (active === 'charts') await renderChart();
-  if (active === 'heatmap') await renderHeatmap();
-  if (active === 'anomalies') await renderAnomalies();
-  if (active === 'settings') await renderHouseholdsList();
+  beginSeriesCache(); // memoizuj série počas tohto render cyklu (žiadne zápisy počas refresh-u)
+  try {
+    const active = document.querySelector('.tab.active').dataset.tab;
+    if (active === 'dashboard') { await renderDashboard(); await renderDashboardCosts(); }
+    if (active === 'history') await renderHistory();
+    if (active === 'charts') await renderChart();
+    if (active === 'heatmap') await renderHeatmap();
+    if (active === 'anomalies') await renderAnomalies();
+    if (active === 'settings') await renderHouseholdsList();
+  } finally {
+    endSeriesCache();
+  }
 }
 
 /* =============================================================
@@ -5114,7 +5617,7 @@ async function switchHousehold(hhId) {
 let wizardEditingId = null;
 
 function openWizard() {
-  document.getElementById('wizardModal').classList.remove('hidden');
+  openModal(document.getElementById('wizardModal'));
   document.getElementById('wizardTitle').textContent = 'Pridať nový dom';
   document.getElementById('wizardSub').textContent = 'Pomenuj dom a vyber meradlá, ktoré budeš sledovať.';
   document.getElementById('wizName').value = '';
@@ -5165,7 +5668,7 @@ async function saveWizard() {
     });
   }
 
-  document.getElementById('wizardModal').classList.add('hidden');
+  closeModal(document.getElementById('wizardModal'));
   toast('Dom "' + name + '" vytvorený');
 
   await switchHousehold(hhId);
@@ -5217,7 +5720,7 @@ async function openHouseholdEdit(id) {
   editingHouseholdId = id;
   document.getElementById('hhEditName').value = h.name;
   document.getElementById('hhEditAddress').value = h.address || '';
-  document.getElementById('hhEditModal').classList.remove('hidden');
+  openModal(document.getElementById('hhEditModal'));
 }
 
 async function saveHouseholdEdit() {
@@ -5226,7 +5729,7 @@ async function saveHouseholdEdit() {
   const address = document.getElementById('hhEditAddress').value.trim();
   if (!name) { toast('Názov je povinný', true); return; }
   await db.households.update(editingHouseholdId, { name, address });
-  document.getElementById('hhEditModal').classList.add('hidden');
+  closeModal(document.getElementById('hhEditModal'));
   editingHouseholdId = null;
   if (State.activeHouseholdId) await loadActiveHousehold();
   toast('Uložené');
@@ -5242,7 +5745,8 @@ async function deleteHousehold(id) {
   const all = await db.households.toArray();
   const ownedCount = all.filter(x => !x.is_shared).length;
   if (ownedCount === 1) { toast('Nemôžeš zmazať jediný vlastný dom', true); return; }
-  if (!confirm(`Naozaj zmazať dom "${h.name}" so všetkými dátami? Nedá sa vrátiť späť.`)) return;
+  // h.name ide cez message → confirmModal ho vykreslí cez textContent (bezpečné)
+  if (!await confirmModal({ title: 'Zmazať dom', message: `Naozaj zmazať dom "${h.name}" so všetkými dátami? Nedá sa vrátiť späť.`, confirmLabel: 'Zmazať dom', danger: true })) return;
 
   // cloud delete (cascade — zmaže aj všetky jeho shares)
   await cloudDeleteHousehold(id);
@@ -5269,9 +5773,17 @@ async function deleteHousehold(id) {
 
 const SHARE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'; // bez I,L,O,U,0,1
 function generateShareCode() {
-  const chunk = () => Array.from({ length: 4 }, () =>
-    SHARE_ALPHABET[Math.floor(Math.random() * SHARE_ALPHABET.length)]
-  ).join('');
+  // CSPRNG namiesto Math.random() — kód dáva read-access k domu, nesmie byť
+  // predvídateľný. Rejection sampling odstráni modulo bias.
+  const n = SHARE_ALPHABET.length;
+  const limit = 256 - (256 % n);
+  const buf = new Uint8Array(1);
+  const pick = () => {
+    let v;
+    do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= limit);
+    return SHARE_ALPHABET[v % n];
+  };
+  const chunk = () => Array.from({ length: 4 }, pick).join('');
   return `SHARE-${chunk()}-${chunk()}`;
 }
 
@@ -5297,7 +5809,7 @@ async function renderSharingCard() {
 
   const { data: shares, error } = await sb.from('household_shares').select('*').order('created_at');
   if (error) {
-    body.innerHTML = `<div class="share-empty">Chyba: ${error.message}</div>`;
+    body.innerHTML = `<div class="share-empty">Chyba: ${escHtml(error.message)}</div>`;
     return;
   }
   const owned = shares.filter(s => s.owner_id === Sync.user.id);
@@ -5321,7 +5833,6 @@ async function renderSharingCard() {
   const ownedByHh = {};
   for (const s of owned) (ownedByHh[s.household_id] = ownedByHh[s.household_id] || []).push(s);
 
-  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
   let html = '<div class="share-section"><h4>Zdieľam s inými</h4>';
   const ownedHh = allHh.filter(h => !h.is_shared);
@@ -5332,17 +5843,23 @@ async function renderSharingCard() {
       const cid = Sync.maps.households[h.id];
       const hShares = (cid && ownedByHh[cid]) ? ownedByHh[cid] : [];
       html += `<div class="share-row"><div class="share-row-info">
-        <div class="share-row-name">${esc(h.name)}</div>`;
+        <div class="share-row-name">${escHtml(h.name)}</div>`;
       if (hShares.length === 0) {
         html += `<div class="share-row-meta">Zatiaľ nezdieľané</div>`;
       } else {
         for (const s of hShares) {
           if (s.claimed_at) {
             const email = idToEmail[s.recipient_id] || s.recipient_id;
-            html += `<div class="share-row-meta">${esc(email)} · od ${new Date(s.claimed_at).toLocaleDateString('sk-SK')}
+            html += `<div class="share-row-meta">${escHtml(email)} · od ${new Date(s.claimed_at).toLocaleDateString('sk-SK')}
               <button class="row-btn danger" data-revoke="${s.id}" title="Zrušiť zdieľanie">×</button></div>`;
           } else {
-            html += `<div class="share-row-meta">Čaká na claim: ${esc(s.code)}
+            const exp = s.expires_at ? new Date(s.expires_at) : null;
+            const expired = exp && exp.getTime() < Date.now();
+            const expLabel = exp
+              ? (expired ? ' · <span class="share-expired">vypršal</span>'
+                         : ` · platí do ${exp.toLocaleDateString('sk-SK')}`)
+              : '';
+            html += `<div class="share-row-meta">Čaká na claim: ${escHtml(s.code)}${expLabel}
               <button class="row-btn danger" data-revoke="${s.id}" title="Zrušiť pozvánku">×</button></div>`;
           }
         }
@@ -5361,8 +5878,8 @@ async function renderSharingCard() {
       const hhName = hh ? hh.name : `(dom #${s.household_id})`;
       const ownerEmail = idToEmail[s.owner_id] || s.owner_id;
       html += `<div class="share-row"><div class="share-row-info">
-        <div class="share-row-name">${esc(hhName)}</div>
-        <div class="share-row-meta">Vlastník: ${esc(ownerEmail)}</div>
+        <div class="share-row-name">${escHtml(hhName)}</div>
+        <div class="share-row-meta">Vlastník: ${escHtml(ownerEmail)}</div>
       </div><button class="btn btn-ghost" data-leave="${s.id}">Odstrániť</button></div>`;
     }
   }
@@ -5385,15 +5902,17 @@ async function generateInvite(localHhId) {
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateShareCode();
+    const expiresAt = new Date(Date.now() + SHARE_CODE_TTL_DAYS * 86400000).toISOString();
     const { error } = await sb.from('household_shares').insert({
       household_id: cloudHhId,
       owner_id: Sync.user.id,
-      code
+      code,
+      expires_at: expiresAt
     });
     if (!error) {
       document.getElementById('shareCodeHhName').textContent = h.name;
       document.getElementById('shareCodeText').textContent = code;
-      document.getElementById('shareCodeModal').classList.remove('hidden');
+      openModal(document.getElementById('shareCodeModal'));
       await renderSharingCard();
       return;
     }
@@ -5414,6 +5933,7 @@ async function claimCode() {
   if (error) {
     let msg = error.message || 'Chyba';
     if (msg.includes('invalid_or_claimed')) msg = 'Kód neexistuje alebo už bol použitý.';
+    else if (msg.includes('expired_code')) msg = 'Kód vypršal — požiadaj o nový.';
     else if (msg.includes('self_claim')) msg = 'Nemôžeš claim-núť svoj vlastný kód.';
     toast(msg, true);
     return;
@@ -5433,7 +5953,7 @@ async function claimCode() {
 }
 
 async function revokeShare(shareId) {
-  if (!confirm('Naozaj zrušiť toto zdieľanie? Druhá strana okamžite stratí prístup.')) return;
+  if (!await confirmModal({ title: 'Zrušiť zdieľanie', message: 'Naozaj zrušiť toto zdieľanie? Druhá strana okamžite stratí prístup.', confirmLabel: 'Zrušiť zdieľanie', danger: true })) return;
   const { error } = await sb.from('household_shares').delete().eq('id', shareId);
   if (error) { toast('Chyba: ' + error.message, true); return; }
   toast('Zrušené');
@@ -5441,7 +5961,7 @@ async function revokeShare(shareId) {
 }
 
 async function leaveShare(shareId) {
-  if (!confirm('Odstrániť tento dom zo svojho zoznamu?')) return;
+  if (!await confirmModal({ title: 'Odstrániť dom', message: 'Odstrániť tento dom zo svojho zoznamu?', confirmLabel: 'Odstrániť' })) return;
   const { error } = await sb.from('household_shares').delete().eq('id', shareId);
   if (error) { toast('Chyba: ' + error.message, true); return; }
   toast('Odstránené — sťahujem zmeny…');
@@ -5479,11 +5999,11 @@ document.addEventListener('click', (e) => {
 });
 document.getElementById('btnAddHousehold').addEventListener('click', openWizard);
 document.getElementById('btnWizCancel').addEventListener('click', () => {
-  document.getElementById('wizardModal').classList.add('hidden');
+  closeModal(document.getElementById('wizardModal'));
 });
 document.getElementById('btnWizSave').addEventListener('click', saveWizard);
 document.getElementById('btnHhEditCancel').addEventListener('click', () => {
-  document.getElementById('hhEditModal').classList.add('hidden');
+  closeModal(document.getElementById('hhEditModal'));
   editingHouseholdId = null;
 });
 document.getElementById('btnHhEditSave').addEventListener('click', saveHouseholdEdit);
@@ -5494,7 +6014,7 @@ document.getElementById('shareCodeInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') claimCode();
 });
 document.getElementById('btnShareCodeClose').addEventListener('click', () => {
-  document.getElementById('shareCodeModal').classList.add('hidden');
+  closeModal(document.getElementById('shareCodeModal'));
 });
 document.getElementById('btnShareCodeCopy').addEventListener('click', async () => {
   const code = document.getElementById('shareCodeText').textContent;
@@ -5538,7 +6058,7 @@ if (fileXlsImport) fileXlsImport.addEventListener('change', async (e) => {
 });
 document.getElementById('btnExcelImportCancel').addEventListener('click', () => {
   pendingExcelImport = null;
-  document.getElementById('excelImportModal').classList.add('hidden');
+  closeModal(document.getElementById('excelImportModal'));
 });
 document.getElementById('btnExcelImportOverwrite').addEventListener('click', () => performExcelImport(true));
 document.getElementById('btnExcelImportKeep').addEventListener('click', () => performExcelImport(false));
@@ -5564,7 +6084,7 @@ window.addEventListener('appinstalled', () => {
   document.getElementById('installCard')?.classList.add('hidden');
 });
 document.getElementById('btnAddTop').addEventListener('click', () => openAddModal());
-document.getElementById('btnCancel').addEventListener('click', () => { document.getElementById('addModal').classList.add('hidden'); });
+document.getElementById('btnCancel').addEventListener('click', () => { closeModal(document.getElementById('addModal')); });
 // Wizard navigation
 document.getElementById('btnWizBack').addEventListener('click', () => {
   if (wizCurrentStep > 1) wizGoTo(wizCurrentStep - 1);
@@ -5577,26 +6097,46 @@ document.getElementById('btnWizNext').addEventListener('click', async () => {
     await saveReading();
   }
 });
-document.getElementById('btnDevCancel').addEventListener('click', () => document.getElementById('deviceModal').classList.add('hidden'));
+document.getElementById('btnDevCancel').addEventListener('click', () => closeModal(document.getElementById('deviceModal')));
 document.getElementById('btnDevSave').addEventListener('click', saveDevice);
 document.getElementById('btnReplaceDevice').addEventListener('click', openDeviceModal);
 document.getElementById('btnExport').addEventListener('click', exportData);
 document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
-document.getElementById('fileImport').addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
+document.getElementById('fileImport').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = ''; // umožní re-import toho istého súboru
+  if (!f) return;
+  try {
+    await importData(f);
+  } catch (err) {
+    console.error('import zlyhal', err);
+    toast('Import zlyhal — neplatný alebo poškodený súbor', true);
+  }
+});
 document.getElementById('btnReset').addEventListener('click', resetAll);
 document.getElementById('chartMeter').addEventListener('change', renderChart);
 document.getElementById('chartView').addEventListener('change', renderChart);
 document.getElementById('heatmapMeter').addEventListener('change', renderHeatmap);
 document.getElementById('btnSaveSettings').addEventListener('click', async () => {
-  const warn = parseInt(document.getElementById('thresholdWarn').value);
-  const severe = parseInt(document.getElementById('thresholdSevere').value);
+  const warn = parseInt(document.getElementById('thresholdWarn').value, 10);
+  const severe = parseInt(document.getElementById('thresholdSevere').value, 10);
+  // Validácia — prázdny/nečíselný vstup by uložil NaN a ticho vypol detekciu
+  // anomálií (pct >= NaN je vždy false). Vyžaduj kladné čísla, warn < severe.
+  if (!Number.isFinite(warn) || !Number.isFinite(severe) || warn <= 0 || severe <= 0) {
+    toast('Prahy musia byť kladné čísla', true);
+    return;
+  }
+  if (warn >= severe) {
+    toast('Prah varovania musí byť menší než prah vážnej anomálie', true);
+    return;
+  }
   await db.settings.put({ key: 'thresholds', warn, severe });
   toast('Nastavenia uložené');
   schedulePush();
 });
 document.getElementById('btnSaveTariffs').addEventListener('click', saveTariffs);
 document.getElementById('btnLogout').addEventListener('click', async () => {
-  if (!confirm('Odhlásiť sa? Lokálna DB zostane, ale po prihlásení sa znova natiahne z cloudu.')) return;
+  if (!await confirmModal({ title: 'Odhlásiť sa', message: 'Odhlásiť sa? Lokálna DB zostane, ale po prihlásení sa znova natiahne z cloudu.', confirmLabel: 'Odhlásiť sa' })) return;
   await signOut();
 });
 document.getElementById('btnFullSync').addEventListener('click', async () => {
@@ -5637,7 +6177,7 @@ document.querySelectorAll('th.sortable').forEach(th => {
 
 // Edit modal
 document.getElementById('btnEditCancel').addEventListener('click', () => {
-  document.getElementById('editModal').classList.add('hidden');
+  closeModal(document.getElementById('editModal'));
   editingId = null;
 });
 document.getElementById('btnEditSave').addEventListener('click', saveEdit);
@@ -5708,9 +6248,12 @@ const SK_MONTHS_NOM = ['január','február','marec','apríl','máj','jún','júl
 
 async function loadXlsx() {
   if (window.XLSX) return window.XLSX;
+  // xlsx 0.18.5 mal CVE-2023-30533 (prototype pollution) + CVE-2024-22363
+  // (ReDoS) pri XLSX.read() na user-import súbore. 0.20.3 ich fixuje.
+  // SheetJS už nepublikuje na npm → oficiálny CDN cdn.sheetjs.com (viď CSP).
   await loadScriptOnce(
-    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
-    'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw'
+    'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+    'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT'
   );
   return window.XLSX;
 }
@@ -5832,6 +6375,13 @@ async function buildImportPreview(rows, structure) {
   }
   parsedRows.sort((a, b) => a.date.localeCompare(b.date));
 
+  // Predbežné načítanie existujúcich odpočtov pre všetky zapojené meradlá naraz
+  // do Map (meterPk|date) — namiesto samostatného DB query na každú bunku v cykle.
+  const existingByKey = new Map();
+  const enabledPks = enabled.map(e => e.meter.pk);
+  const existingRows = await db.readings.where('meterPk').anyOf(enabledPks).toArray();
+  for (const er of existingRows) existingByKey.set(er.meterPk + '|' + er.date, er);
+
   const prevStavByType = {};
   for (const pr of parsedRows) {
     for (const col of structure) {
@@ -5860,7 +6410,7 @@ async function buildImportPreview(rows, structure) {
       prevStavByType[col.type] = { date: pr.date, stav };
 
       const meter = enabled.find(e => e.type === col.type).meter;
-      const existing = await db.readings.where('[meterPk+date]').equals([meter.pk, pr.date]).first();
+      const existing = existingByKey.get(meter.pk + '|' + pr.date) || null;
       const item = {
         date: pr.date, meterType: col.type, meterPk: meter.pk,
         meterName: meter.name, meterUnit: meter.unit,
@@ -5884,7 +6434,7 @@ async function handleExcelImportFile(file) {
   const modal = document.getElementById('excelImportModal');
   const body = document.getElementById('excelImportBody');
   const actions = document.getElementById('excelImportActions');
-  modal.classList.remove('hidden');
+  openModal(modal);
   actions.style.display = 'none';
   body.innerHTML = '<div class="loading-row"><span class="spinner" aria-hidden="true"></span>Parsujem Excel…</div>';
 
@@ -6021,7 +6571,7 @@ async function performExcelImport(overwriteConflicts) {
   }
 
   pendingExcelImport = null;
-  document.getElementById('excelImportModal').classList.add('hidden');
+  closeModal(document.getElementById('excelImportModal'));
 
   const parts = [`+${inserted} nových`];
   if (updated) parts.push(`${updated} prepísaných`);
@@ -6354,8 +6904,16 @@ function applyTheme(mode) {
   }
   // Update segmented control if present
   document.querySelectorAll('.theme-seg').forEach(b => {
-    b.classList.toggle('active', b.dataset.themeMode === mode);
+    const isActive = b.dataset.themeMode === mode;
+    b.classList.toggle('active', isActive);
+    // aria-checked pre role="radio" — stav pre čítačky obrazovky
+    b.setAttribute('aria-checked', isActive ? 'true' : 'false');
   });
+  // Grafy čítajú farby z CSS premenných → po zmene témy ich prekresli.
+  const appRoot = document.getElementById('appRoot');
+  if (typeof refresh === 'function' && appRoot && !appRoot.classList.contains('hidden')) {
+    refresh();
+  }
 }
 
 // React to OS dark/light change while in 'system' mode
@@ -6557,18 +7115,18 @@ async function startApp() {
       <div style="max-width: 600px; margin: 80px auto; padding: 32px; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: #1c1c1e; background: #ffffff; border: 1px solid rgba(0,0,0,0.1); border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
         <h2 style="font-weight: 700; font-size: 28px; margin-bottom: 12px; letter-spacing: -0.02em;">Niečo sa pokazilo</h2>
         <p style="margin-bottom: 12px; color: #3c3c43;">Inicializácia appky zlyhala.</p>
-        <p style="margin-bottom: 20px; padding: 12px; background: #f2f2f7; border-radius: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 13px; color: #ff3b30;">${err.message}</p>
+        <p style="margin-bottom: 20px; padding: 12px; background: #f2f2f7; border-radius: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 13px; color: #ff3b30;">${escHtml(err.message)}</p>
         <button id="btnHardReset" style="margin-top: 24px; background: #ff3b30; color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; cursor: pointer; font-family: inherit;">Tvrdý reset (zmaže obe lokálne DB)</button>
       </div>
     `;
     document.getElementById('btnHardReset').addEventListener('click', async () => {
-      if (!confirm('Naozaj zmazať obe lokálne DB? Cloud dáta zostanú.')) return;
+      if (!await confirmModal({ title: 'Tvrdý reset', message: 'Naozaj zmazať obe lokálne DB? Cloud dáta zostanú.', confirmLabel: 'Zmazať lokálne DB', danger: true })) return;
       try {
         await Dexie.delete('spotrebaDB');
         await Dexie.delete('spotrebaDB_v2');
         location.reload();
       } catch(e) {
-        alert('Reset zlyhal: ' + e.message);
+        toast('Reset zlyhal: ' + e.message, true);
       }
     });
   }
