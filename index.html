@@ -1645,6 +1645,7 @@
   .share-row-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
   .share-row-name { font-weight: 500; font-size: 14px; }
   .share-row-meta { font-size: 11px; color: var(--ink-3); font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace; }
+  .share-expired { color: var(--bad-strong); font-weight: 600; }
   .share-claim {
     display: flex;
     gap: 8px;
@@ -2322,7 +2323,7 @@
 <div id="shareCodeModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shareCodeTitle">
   <div class="modal">
     <h3 id="shareCodeTitle">Pozvánka pre <span id="shareCodeHhName">—</span></h3>
-    <p class="modal-sub">Pošli tento kód osobe, ktorej chceš dať prístup. Kód je jednorazový.</p>
+    <p class="modal-sub">Pošli tento kód osobe, ktorej chceš dať prístup. Kód je jednorazový a platí 7 dní.</p>
 
     <div class="share-code-display" id="shareCodeText">SHARE-XXXX-XXXX</div>
 
@@ -5672,7 +5673,13 @@ async function renderSharingCard() {
             html += `<div class="share-row-meta">${escHtml(email)} · od ${new Date(s.claimed_at).toLocaleDateString('sk-SK')}
               <button class="row-btn danger" data-revoke="${s.id}" title="Zrušiť zdieľanie">×</button></div>`;
           } else {
-            html += `<div class="share-row-meta">Čaká na claim: ${escHtml(s.code)}
+            const exp = s.expires_at ? new Date(s.expires_at) : null;
+            const expired = exp && exp.getTime() < Date.now();
+            const expLabel = exp
+              ? (expired ? ' · <span class="share-expired">vypršal</span>'
+                         : ` · platí do ${exp.toLocaleDateString('sk-SK')}`)
+              : '';
+            html += `<div class="share-row-meta">Čaká na claim: ${escHtml(s.code)}${expLabel}
               <button class="row-btn danger" data-revoke="${s.id}" title="Zrušiť pozvánku">×</button></div>`;
           }
         }
@@ -5715,10 +5722,12 @@ async function generateInvite(localHhId) {
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateShareCode();
+    const expiresAt = new Date(Date.now() + SHARE_CODE_TTL_DAYS * 86400000).toISOString();
     const { error } = await sb.from('household_shares').insert({
       household_id: cloudHhId,
       owner_id: Sync.user.id,
-      code
+      code,
+      expires_at: expiresAt
     });
     if (!error) {
       document.getElementById('shareCodeHhName').textContent = h.name;
@@ -5744,6 +5753,7 @@ async function claimCode() {
   if (error) {
     let msg = error.message || 'Chyba';
     if (msg.includes('invalid_or_claimed')) msg = 'Kód neexistuje alebo už bol použitý.';
+    else if (msg.includes('expired_code')) msg = 'Kód vypršal — požiadaj o nový.';
     else if (msg.includes('self_claim')) msg = 'Nemôžeš claim-núť svoj vlastný kód.';
     toast(msg, true);
     return;
