@@ -2938,9 +2938,13 @@ async function pushAll() {
         setMap('readings', batch[j].localId, data[j].id);
       }
     }
-    // Updates
-    for (const u of toUpdate) {
-      const { error } = await sb.from('readings').update(u.payload).eq('id', u.cloudId);
+    // Updates — jeden batch upsert namiesto N sekvenčných UPDATE round-tripov.
+    // id v payloade → upsert updatne existujúci riadok (conflict na PK).
+    for (let i = 0; i < toUpdate.length; i += 200) {
+      const batch = toUpdate.slice(i, i + 200);
+      const { error } = await sb.from('readings').upsert(
+        batch.map(u => ({ id: u.cloudId, ...u.payload }))
+      );
       if (error) throw error;
     }
 
@@ -3682,8 +3686,23 @@ function deltaBetween(prevVal, prevDeviceId, curVal, curDeviceId, devices) {
   return (oldFinal - prevVal) + (curVal - newInit);
 }
 
+// Per-refresh memo cache. Počas jedného refresh() cyklu sa tá istá séria
+// (deltas/monthly) na meradlo počíta 4× a zakaždým znova číta IndexedDB.
+// Počas refresh-u cachujeme promisy; mimo refresh-u je cache null → čerstvý
+// výpočet (renderChart/updateAddHint volané ad-hoc dostanú aktuálne dáta).
+let _deltaCache = null;
+let _monthlyCache = null;
+function beginSeriesCache() { _deltaCache = new Map(); _monthlyCache = new Map(); }
+function endSeriesCache() { _deltaCache = null; _monthlyCache = null; }
+
 // Spočíta spotrebu medzi dvoma odpočtami, korektne cez výmenu merača.
 async function computeDeltas(meterPk) {
+  if (_deltaCache && _deltaCache.has(meterPk)) return _deltaCache.get(meterPk);
+  const p = _computeDeltas(meterPk);
+  if (_deltaCache) _deltaCache.set(meterPk, p);
+  return p;
+}
+async function _computeDeltas(meterPk) {
   const readings = await getReadings(meterPk);
   const devices = await db.devices.where('meterPk').equals(meterPk).toArray();
   const out = [];
@@ -3698,6 +3717,12 @@ async function computeDeltas(meterPk) {
 
 // Mesačná spotreba normalizovaná na kalendárne mesiace (proporcionálne).
 async function monthlyConsumption(meterPk) {
+  if (_monthlyCache && _monthlyCache.has(meterPk)) return _monthlyCache.get(meterPk);
+  const p = _monthlyConsumption(meterPk);
+  if (_monthlyCache) _monthlyCache.set(meterPk, p);
+  return p;
+}
+async function _monthlyConsumption(meterPk) {
   const deltas = await computeDeltas(meterPk);
   const months = {};
   for (const { from, to, delta } of deltas) {
@@ -4046,12 +4071,13 @@ async function renderHistory() {
   for (const m of metersToProcess) {
     const rs = await getReadings(m.pk);
     const deltas = await computeDeltas(m.pk);
+    // Map id→delta namiesto deltas.find() v cykle (bolo O(n²)).
+    const deltaById = new Map(deltas.map(d => [d.reading.id, d.delta]));
     for (const r of rs) {
-      const delta = deltas.find(d => d.reading.id === r.id);
       all.push({
         ...r,
         meter: m,
-        delta: delta ? delta.delta : null,
+        delta: deltaById.has(r.id) ? deltaById.get(r.id) : null,
         meterName: m.name
       });
     }
@@ -5188,12 +5214,15 @@ async function saveTariffs() {
 async function renderDashboardCosts() {
   const tariffs = await getTariffs();
   const cards = document.querySelectorAll('.meter-card');
-  cards.forEach(async card => {
+  // for...of + await namiesto forEach(async …) — inak funkcia dobehne skôr,
+  // než sa cost riadky vložia (nedeterministické poradie voči ďalšiemu renderu).
+  // monthlyConsumption je počas refresh-u memoizovaná (viď beginSeriesCache).
+  for (const card of cards) {
     const type = card.dataset.type;
     const tariff = tariffs[type];
-    if (tariff == null) return;
+    if (tariff == null) continue;
     const m = meterByType(type);
-    if (!m) return;
+    if (!m) continue;
     const monthly = await monthlyConsumption(m.pk);
     const now = new Date();
     const curYM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -5206,7 +5235,7 @@ async function renderDashboardCosts() {
       c.innerHTML = `≈ <strong>${fmtCost(cost)}</strong> tento mesiac`;
       meta.parentNode.insertBefore(c, meta);
     }
-  });
+  }
 }
 
 function switchTab(tab) {
@@ -5237,13 +5266,18 @@ async function loadSettings() {
 }
 
 async function refresh() {
-  const active = document.querySelector('.tab.active').dataset.tab;
-  if (active === 'dashboard') { await renderDashboard(); await renderDashboardCosts(); }
-  if (active === 'history') await renderHistory();
-  if (active === 'charts') await renderChart();
-  if (active === 'heatmap') await renderHeatmap();
-  if (active === 'anomalies') await renderAnomalies();
-  if (active === 'settings') await renderHouseholdsList();
+  beginSeriesCache(); // memoizuj série počas tohto render cyklu (žiadne zápisy počas refresh-u)
+  try {
+    const active = document.querySelector('.tab.active').dataset.tab;
+    if (active === 'dashboard') { await renderDashboard(); await renderDashboardCosts(); }
+    if (active === 'history') await renderHistory();
+    if (active === 'charts') await renderChart();
+    if (active === 'heatmap') await renderHeatmap();
+    if (active === 'anomalies') await renderAnomalies();
+    if (active === 'settings') await renderHouseholdsList();
+  } finally {
+    endSeriesCache();
+  }
 }
 
 /* =============================================================
@@ -6052,6 +6086,13 @@ async function buildImportPreview(rows, structure) {
   }
   parsedRows.sort((a, b) => a.date.localeCompare(b.date));
 
+  // Predbežné načítanie existujúcich odpočtov pre všetky zapojené meradlá naraz
+  // do Map (meterPk|date) — namiesto samostatného DB query na každú bunku v cykle.
+  const existingByKey = new Map();
+  const enabledPks = enabled.map(e => e.meter.pk);
+  const existingRows = await db.readings.where('meterPk').anyOf(enabledPks).toArray();
+  for (const er of existingRows) existingByKey.set(er.meterPk + '|' + er.date, er);
+
   const prevStavByType = {};
   for (const pr of parsedRows) {
     for (const col of structure) {
@@ -6080,7 +6121,7 @@ async function buildImportPreview(rows, structure) {
       prevStavByType[col.type] = { date: pr.date, stav };
 
       const meter = enabled.find(e => e.type === col.type).meter;
-      const existing = await db.readings.where('[meterPk+date]').equals([meter.pk, pr.date]).first();
+      const existing = existingByKey.get(meter.pk + '|' + pr.date) || null;
       const item = {
         date: pr.date, meterType: col.type, meterPk: meter.pk,
         meterName: meter.name, meterUnit: meter.unit,
