@@ -716,7 +716,7 @@
       height: 56px;
       border-radius: 50%;
       background: var(--accent);
-      color: var(--bg-1);
+      color: var(--accent-text); /* --bg-1 neexistoval → glyf dedil zlú farbu */
       border: none;
       font-size: 32px;
       align-items: center;
@@ -2500,6 +2500,15 @@ const __isRecoveryUrl = window.location.hash.includes('type=recovery');
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 window.sb = sb;
 
+/* ================ Pomenované konštanty ================ */
+const PUSH_DEBOUNCE_MS = 800;      // debounce lokálne zmeny → cloud push
+const CLOUD_BATCH_SIZE = 200;      // batch pre bulk insert/upsert do Supabase
+const TOAST_DURATION_MS = 2200;    // ako dlho je toast viditeľný
+const UNDO_DURATION_MS = 5000;     // okno na undo pri mazaní
+const DEFAULT_THRESHOLD_WARN = 25; // % nad priemer = varovanie
+const DEFAULT_THRESHOLD_SEVERE = 50; // % nad priemer = vážna anomália
+const SHARE_CODE_TTL_DAYS = 7;     // platnosť share kódu (viď claim_share_code)
+
 const Sync = {
   user: null,
   // mapy: lokálne ID → cloud ID a opačne (pre každý typ)
@@ -2930,8 +2939,8 @@ async function pushAll() {
       }
     }
     // Bulk insert v batch po 200
-    for (let i = 0; i < toInsert.length; i += 200) {
-      const batch = toInsert.slice(i, i + 200);
+    for (let i = 0; i < toInsert.length; i += CLOUD_BATCH_SIZE) {
+      const batch = toInsert.slice(i, i + CLOUD_BATCH_SIZE);
       const { data, error } = await sb.from('readings').insert(batch.map(x => x.payload)).select();
       if (error) throw error;
       for (let j = 0; j < batch.length; j++) {
@@ -2940,8 +2949,8 @@ async function pushAll() {
     }
     // Updates — jeden batch upsert namiesto N sekvenčných UPDATE round-tripov.
     // id v payloade → upsert updatne existujúci riadok (conflict na PK).
-    for (let i = 0; i < toUpdate.length; i += 200) {
-      const batch = toUpdate.slice(i, i + 200);
+    for (let i = 0; i < toUpdate.length; i += CLOUD_BATCH_SIZE) {
+      const batch = toUpdate.slice(i, i + CLOUD_BATCH_SIZE);
       const { error } = await sb.from('readings').upsert(
         batch.map(u => ({ id: u.cloudId, ...u.payload }))
       );
@@ -2979,10 +2988,13 @@ let pushTimer = null;
 function schedulePush() {
   if (!Sync.user) return;
   if (pushTimer) clearTimeout(pushTimer);
+  // Ak sme offline, nechaj indikátor na 'offline' (nie blikni syncing→error).
+  // Zmena je perzistovaná lokálne a pushne sa po 'online' evente.
+  if (!navigator.onLine) { setSyncStatus('offline'); return; }
   setSyncStatus('syncing');
   pushTimer = setTimeout(async () => {
     try { await pushAll(); } catch (e) { /* status už nastavený */ }
-  }, 800);
+  }, PUSH_DEBOUNCE_MS);
 }
 
 /* ================ Cloud delete handlers ================ */
@@ -3591,9 +3603,22 @@ async function seedParentsHouseIfMissing() {
   await db.readings.bulkAdd(readings);
 }
 
+// Seed sú OSOBNÉ dáta (SEED_*) — v produkcii sa nesejú. Zapni len na dev cez
+// ?seed=1 v URL alebo localStorage 'spotreba-seed'='1'. Bez flagu nový user
+// štartuje prázdny a dom si vytvorí cez "+ Pridať dom".
+function isSeedEnabled() {
+  try {
+    const p = new URLSearchParams(location.search);
+    if (p.get('seed') === '1') { localStorage.setItem('spotreba-seed', '1'); return true; }
+    if (p.get('seed') === '0') { localStorage.removeItem('spotreba-seed'); return false; }
+    return localStorage.getItem('spotreba-seed') === '1';
+  } catch (e) { return false; }
+}
+
 async function seedIfEmpty() {
   const householdsCount = await db.households.count();
   if (householdsCount > 0) return;
+  if (!isSeedEnabled()) return; // v produkcii žiadne osobné seed dáta
   // Vytvor "Môj dom" s defaultnými dátami
   const hhId = await db.households.add({
     name: 'Môj dom',
@@ -3649,7 +3674,7 @@ async function seedIfEmpty() {
   await db.readings.bulkAdd(readings);
 
   await db.settings.put({ key: 'activeHousehold', value: hhId });
-  await db.settings.put({ key: 'thresholds', warn: 25, severe: 50 });
+  await db.settings.put({ key: 'thresholds', warn: DEFAULT_THRESHOLD_WARN, severe: DEFAULT_THRESHOLD_SEVERE });
 }
 
 /* =============================================================
@@ -3756,7 +3781,7 @@ async function yearlyConsumption(meterPk) {
 }
 
 async function detectAnomalies() {
-  const settings = await db.settings.get('thresholds') || { warn: 25, severe: 50 };
+  const settings = await db.settings.get('thresholds') || { warn: DEFAULT_THRESHOLD_WARN, severe: DEFAULT_THRESHOLD_SEVERE };
   const out = [];
   for (const m of State.meters) {
     const monthly = await monthlyConsumption(m.pk);
@@ -4486,6 +4511,16 @@ let wizCurrentStep = 1;
 
 function openAddModal(presetMeterPk = null) {
   if (!ensureWritable()) return;
+  // Bez domu / meradiel je wizard prázdny a slepý — nasmeruj usera namiesto
+  // otvorenia mŕtveho modálu.
+  if (!State.household) {
+    toast('Najprv pridaj dom (menu vľavo hore → Pridať dom)', true);
+    return;
+  }
+  if (!State.meters || State.meters.length === 0) {
+    toast('Tento dom nemá žiadne meradlá', true);
+    return;
+  }
   openModal(document.getElementById('addModal'));
   setAddDateValue(new Date().toISOString().split('T')[0]);  // dnes, format-uje aj text input
   document.getElementById('addValue').value = '';
@@ -5035,7 +5070,7 @@ function toast(msg, isError = false) {
   t.setAttribute('role', isError ? 'alert' : 'status');
   t.textContent = msg;
   region.appendChild(t);
-  setTimeout(() => t.remove(), 2200);
+  setTimeout(() => t.remove(), TOAST_DURATION_MS);
 }
 
 
@@ -5259,7 +5294,7 @@ function switchTab(tab) {
 }
 
 async function loadSettings() {
-  const s = await db.settings.get('thresholds') || { warn: 25, severe: 50 };
+  const s = await db.settings.get('thresholds') || { warn: DEFAULT_THRESHOLD_WARN, severe: DEFAULT_THRESHOLD_SEVERE };
   document.getElementById('thresholdWarn').value = s.warn;
   document.getElementById('thresholdSevere').value = s.severe;
   await renderTariffSettings();
@@ -5562,7 +5597,6 @@ async function renderSharingCard() {
   const ownedByHh = {};
   for (const s of owned) (ownedByHh[s.household_id] = ownedByHh[s.household_id] || []).push(s);
 
-  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
   let html = '<div class="share-section"><h4>Zdieľam s inými</h4>';
   const ownedHh = allHh.filter(h => !h.is_shared);
@@ -5573,17 +5607,17 @@ async function renderSharingCard() {
       const cid = Sync.maps.households[h.id];
       const hShares = (cid && ownedByHh[cid]) ? ownedByHh[cid] : [];
       html += `<div class="share-row"><div class="share-row-info">
-        <div class="share-row-name">${esc(h.name)}</div>`;
+        <div class="share-row-name">${escHtml(h.name)}</div>`;
       if (hShares.length === 0) {
         html += `<div class="share-row-meta">Zatiaľ nezdieľané</div>`;
       } else {
         for (const s of hShares) {
           if (s.claimed_at) {
             const email = idToEmail[s.recipient_id] || s.recipient_id;
-            html += `<div class="share-row-meta">${esc(email)} · od ${new Date(s.claimed_at).toLocaleDateString('sk-SK')}
+            html += `<div class="share-row-meta">${escHtml(email)} · od ${new Date(s.claimed_at).toLocaleDateString('sk-SK')}
               <button class="row-btn danger" data-revoke="${s.id}" title="Zrušiť zdieľanie">×</button></div>`;
           } else {
-            html += `<div class="share-row-meta">Čaká na claim: ${esc(s.code)}
+            html += `<div class="share-row-meta">Čaká na claim: ${escHtml(s.code)}
               <button class="row-btn danger" data-revoke="${s.id}" title="Zrušiť pozvánku">×</button></div>`;
           }
         }
@@ -5602,8 +5636,8 @@ async function renderSharingCard() {
       const hhName = hh ? hh.name : `(dom #${s.household_id})`;
       const ownerEmail = idToEmail[s.owner_id] || s.owner_id;
       html += `<div class="share-row"><div class="share-row-info">
-        <div class="share-row-name">${esc(hhName)}</div>
-        <div class="share-row-meta">Vlastník: ${esc(ownerEmail)}</div>
+        <div class="share-row-name">${escHtml(hhName)}</div>
+        <div class="share-row-meta">Vlastník: ${escHtml(ownerEmail)}</div>
       </div><button class="btn btn-ghost" data-leave="${s.id}">Odstrániť</button></div>`;
     }
   }
@@ -5839,8 +5873,18 @@ document.getElementById('chartMeter').addEventListener('change', renderChart);
 document.getElementById('chartView').addEventListener('change', renderChart);
 document.getElementById('heatmapMeter').addEventListener('change', renderHeatmap);
 document.getElementById('btnSaveSettings').addEventListener('click', async () => {
-  const warn = parseInt(document.getElementById('thresholdWarn').value);
-  const severe = parseInt(document.getElementById('thresholdSevere').value);
+  const warn = parseInt(document.getElementById('thresholdWarn').value, 10);
+  const severe = parseInt(document.getElementById('thresholdSevere').value, 10);
+  // Validácia — prázdny/nečíselný vstup by uložil NaN a ticho vypol detekciu
+  // anomálií (pct >= NaN je vždy false). Vyžaduj kladné čísla, warn < severe.
+  if (!Number.isFinite(warn) || !Number.isFinite(severe) || warn <= 0 || severe <= 0) {
+    toast('Prahy musia byť kladné čísla', true);
+    return;
+  }
+  if (warn >= severe) {
+    toast('Prah varovania musí byť menší než prah vážnej anomálie', true);
+    return;
+  }
   await db.settings.put({ key: 'thresholds', warn, severe });
   toast('Nastavenia uložené');
   schedulePush();
