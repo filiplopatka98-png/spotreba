@@ -2509,6 +2509,17 @@ const DEFAULT_THRESHOLD_WARN = 25; // % nad priemer = varovanie
 const DEFAULT_THRESHOLD_SEVERE = 50; // % nad priemer = vážna anomália
 const SHARE_CODE_TTL_DAYS = 7;     // platnosť share kódu (viď claim_share_code)
 
+/* ================ Sync mutex ================ */
+// Serializuje push a pull, aby sa neprekrývali (debounced push počas pull-u by
+// mohol prepísať práve stiahnuté dáta). Každá operácia beží až po dobehnutí
+// predchádzajúcej.
+let _syncLock = Promise.resolve();
+function withSyncLock(fn) {
+  const run = _syncLock.then(fn, fn);
+  _syncLock = run.catch(() => {});
+  return run;
+}
+
 const Sync = {
   user: null,
   // mapy: lokálne ID → cloud ID a opačne (pre každý typ)
@@ -2631,7 +2642,8 @@ async function updatePassword(newPassword) {
 
 /* ================ PULL: cloud → local ================ */
 
-async function pullFromCloud() {
+function pullFromCloud() { return withSyncLock(_pullFromCloud); }
+async function _pullFromCloud() {
   if (!Sync.user) return;
   setSyncStatus('syncing');
 
@@ -2837,7 +2849,8 @@ async function pullFromCloud() {
 
 /* ================ PUSH: local → cloud ================ */
 
-async function pushAll() {
+function pushAll() { return withSyncLock(_pushAll); }
+async function _pushAll() {
   if (!Sync.user) return;
   setSyncStatus('syncing');
 
@@ -4975,10 +4988,43 @@ async function exportData() {
   toast('Export hotový');
 }
 
+// Zmaže VLASTNÉ cloud dáta usera (households → cascade na meters/devices/
+// readings) + user_settings. Zdieľané domy (cudzí owner) sa NEmažú — nie sú
+// pod naším user_id. Používa import a reset, aby po nich cloud nezostal
+// nekonzistentný (staré riadky by inak pull znova stiahol).
+async function wipeCloudOwnData() {
+  if (!Sync.user) return;
+  const { error } = await sb.from('households').delete().eq('user_id', Sync.user.id);
+  if (error) throw error;
+  await sb.from('user_settings').delete().eq('user_id', Sync.user.id);
+}
+
+// Spoločný záver pre import/reset: (voliteľne) vyčisti cloud, potom pushni
+// čerstvý lokálny stav. Offline → wipe sa preskočí, upozorní usera.
+async function reconcileCloudAfterLocalReplace(wipeCloud) {
+  await loadSyncMaps(); // syncMaps boli v db.settings.clear() zmazané → prázdne mapy
+  if (wipeCloud && Sync.user) {
+    if (navigator.onLine) {
+      try {
+        await withSyncLock(wipeCloudOwnData);
+      } catch (e) {
+        console.error('cloud wipe zlyhal', e);
+        toast('Lokálne OK, ale čistenie cloudu zlyhalo — sprav plnú synchronizáciu', true);
+      }
+    } else {
+      toast('Offline — cloud sa zosúladí po pripojení (sprav plnú synchronizáciu)', true);
+    }
+  }
+  await loadActiveHousehold();
+  await refresh();
+  renderHouseholdSwitcher();
+  schedulePush();
+}
+
 async function importData(file) {
   const text = await file.text();
   const data = JSON.parse(text);
-  if (!confirm('Import nahradí všetky aktuálne dáta. Pokračovať?')) return;
+  if (!confirm('Import nahradí všetky aktuálne dáta — lokálne aj v cloude. Pokračovať?')) return;
 
   await db.households.clear();
   await db.meters.clear();
@@ -5039,33 +5085,24 @@ async function importData(file) {
     if (data.settings) await db.settings.bulkAdd(data.settings);
   }
 
-  // db.settings.clear() zmazal aj perzistované 'syncMaps' → in-memory mapy sú
-  // teraz neplatné (ukazujú na staré cloud ID). Bez resetu by ďalší pushAll
-  // UPDATE-oval cudzie cloud riadky podľa starých cloudId. Resetneme na prázdno
-  // a naimportované dáta pushneme ako nové.
-  await loadSyncMaps();
   toast('Import hotový');
-  await loadActiveHousehold();
-  await refresh();
-  renderHouseholdSwitcher();
-  schedulePush();
+  // db.settings.clear() zmazal aj 'syncMaps'. Import NAHRÁDZA všetko → vyčisti
+  // vlastné cloud dáta a pushni čerstvý stav (žiadne duplikáty/UPDATE cudzích
+  // riadkov podľa starých cloudId).
+  await reconcileCloudAfterLocalReplace(true);
 }
 
 async function resetAll() {
-  if (!confirm('Naozaj vymazať VŠETKY dáta? Nedá sa vrátiť späť.')) return;
+  if (!confirm('Naozaj vymazať VŠETKY dáta (lokálne aj v cloude)? Nedá sa vrátiť späť.')) return;
   await db.households.clear();
   await db.meters.clear();
   await db.devices.clear();
   await db.readings.clear();
   await db.settings.clear();
   await seedIfEmpty();
-  // Viď importData — po db.settings.clear() treba resetnúť sync mapy.
-  await loadSyncMaps();
-  await loadActiveHousehold();
-  toast('Reset hotový — obnovené východiskové dáta');
-  await refresh();
-  renderHouseholdSwitcher();
-  schedulePush();
+  toast('Reset hotový');
+  // Reset = "vymazať VŠETKY dáta" → vyčisti aj cloud, inak by pull dáta vrátil.
+  await reconcileCloudAfterLocalReplace(true);
 }
 
 /* =============================================================
