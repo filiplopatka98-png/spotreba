@@ -77,6 +77,8 @@
 <!-- Šetrí ~300KB initial download. Chart.js sa pre-loadne hneď po auth pre rýchly prvý render. -->
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#f2f2f7" id="metaThemeColor">
+<!-- Dark-mode theme-color (light je vyššie, s id používaným JS-om) -->
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0f10">
 
 <!-- Favicons -->
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
@@ -86,6 +88,7 @@
 <!-- iOS / Safari home screen -->
 <link rel="apple-touch-icon" href="./icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Spotreba">
 <style>
@@ -665,7 +668,16 @@
       flex-wrap: wrap;
     }
     .sync-indicator { padding: 6px 8px; }
-    .sync-indicator #syncText { display: none; }
+    /* Text stavu sa vizuálne skryje, no ostáva v accessibility strome (nie color-only) */
+    .sync-indicator #syncText {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
     /* Tieto tlačidlá v hlavičke nedávajú zmysel na mobile */
     #btnImport, #btnExport, #btnAddTop { display: none; }
     /* Switcher zaberie celú šírku */
@@ -1803,9 +1815,80 @@
   .update-banner .btn-update:hover { background: var(--bg-2); }
   .update-banner.hidden { display: none; }
 
+  /* ===== Prístupnosť (a11y) ===== */
+
+  /* Reusable vizuálne-skrytý (screen-reader-only) helper */
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Skip link — skrytý mimo obrazovky, viditeľný pri fokuse cez klávesnicu */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 10000;
+    background: var(--accent-strong);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 0 0 8px 0;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .skip-link:focus {
+    left: 0;
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+  }
+
+  /* Viditeľný focus ring pre klávesnicovú navigáciu (≥3:1 kontrast) */
+  .btn:focus-visible,
+  .tab:focus-visible,
+  .bottom-tab:focus-visible,
+  .meter-card:focus-visible,
+  .hh-item:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 2px;
+  }
+  /* Pri fokuse myšou (nie klávesnicou) žiadny ring navyše */
+  .btn:focus:not(:focus-visible),
+  .tab:focus:not(:focus-visible),
+  .bottom-tab:focus:not(:focus-visible),
+  button:focus:not(:focus-visible),
+  a:focus:not(:focus-visible),
+  input:focus:not(:focus-visible),
+  select:focus:not(:focus-visible),
+  [tabindex]:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Rešpektuj prefers-reduced-motion — utíši aj nekonečný spin spinner */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
 </style>
 </head>
 <body>
+
+<!-- Skip link — preskočí navigáciu, prvý fokusovateľný prvok stránky -->
+<a href="#appRoot" class="skip-link">Preskočiť na obsah</a>
 
 <!-- STARTUP OVERLAY — počas initial sync z cloudu -->
 <div class="startup-overlay hidden" id="startupOverlay" role="status" aria-live="polite">
@@ -1830,17 +1913,17 @@
       <button class="auth-tab" data-mode="signup">Vytvoriť účet</button>
     </div>
 
-    <div id="authError" class="auth-error hidden"></div>
-    <div id="authSuccess" class="auth-success hidden"></div>
+    <div id="authError" class="auth-error hidden" role="alert"></div>
+    <div id="authSuccess" class="auth-success hidden" role="status"></div>
 
     <!-- DEFAULT FORM (signin/signup) -->
     <div id="authFormDefault">
       <div class="field">
-        <label>Email</label>
+        <label for="authEmail">Email</label>
         <input type="email" id="authEmail" placeholder="meno@example.com" autocomplete="email">
       </div>
       <div class="field">
-        <label>Heslo</label>
+        <label for="authPassword">Heslo</label>
         <input type="password" id="authPassword" placeholder="aspoň 6 znakov" autocomplete="current-password">
       </div>
 
@@ -1856,11 +1939,11 @@
     <div id="authFormRecovery" class="hidden">
       <p class="auth-recovery-intro">Nastav si nové heslo pre <strong id="authRecoveryEmail">—</strong>.</p>
       <div class="field">
-        <label>Nové heslo</label>
+        <label for="authNewPassword">Nové heslo</label>
         <input type="password" id="authNewPassword" placeholder="aspoň 6 znakov" autocomplete="new-password">
       </div>
       <div class="field">
-        <label>Potvrď nové heslo</label>
+        <label for="authNewPassword2">Potvrď nové heslo</label>
         <input type="password" id="authNewPassword2" placeholder="zopakuj heslo" autocomplete="new-password">
       </div>
       <button class="btn btn-primary" id="authRecoverySubmit" style="width: 100%; margin-top: 8px;">Nastaviť heslo</button>
@@ -1904,7 +1987,7 @@
     </div>
   </header>
 
-  <nav class="tabs">
+  <nav class="tabs" aria-label="Sekcie">
     <button class="tab active" data-tab="dashboard">Dashboard</button>
     <button class="tab" data-tab="history">História</button>
     <button class="tab" data-tab="charts">Grafy</button>
@@ -1918,6 +2001,7 @@
   </div>
 
   <!-- DASHBOARD -->
+  <main>
   <section id="tab-dashboard">
     <div class="section-title">
       <h2>Aktuálny stav</h2>
@@ -1931,7 +2015,7 @@
     </div>
     <div class="card">
       <div class="chart-wrap" style="height: 280px;">
-        <canvas id="chartCompare"></canvas>
+        <canvas id="chartCompare" role="img" aria-label="Graf porovnania spotreby po mesiacoch"></canvas>
       </div>
     </div>
 
@@ -1993,7 +2077,7 @@
         </select>
       </div>
       <div class="chart-wrap">
-        <canvas id="mainChart"></canvas>
+        <canvas id="mainChart" role="img" aria-label="Graf spotreby v čase"></canvas>
       </div>
     </div>
   </section>
@@ -2080,11 +2164,11 @@
         Ak je mesačná spotreba o viac než X % vyššia oproti priemeru rovnakého mesiaca z predchádzajúcich rokov, vznikne upozornenie.
       </p>
       <div class="field">
-        <label>Prah varovania (%)</label>
+        <label for="thresholdWarn">Prah varovania (%)</label>
         <input type="number" id="thresholdWarn" value="25" min="5" max="200">
       </div>
       <div class="field">
-        <label>Prah vážnej anomálie (%)</label>
+        <label for="thresholdSevere">Prah vážnej anomálie (%)</label>
         <input type="number" id="thresholdSevere" value="50" min="5" max="500">
       </div>
       <button class="btn btn-primary" id="btnSaveSettings">Uložiť</button>
@@ -2150,6 +2234,7 @@
       <button class="btn btn-danger" id="btnReset">Vymazať všetky dáta</button>
     </div>
   </section>
+  </main>
 
   <!-- BOTTOM NAVIGATION (mobile only) -->
   <nav class="bottom-tabs" id="bottomTabs" aria-label="Hlavná navigácia">
@@ -2167,7 +2252,7 @@
 </div>
 
 <!-- HOUSEHOLD WIZARD MODAL -->
-<div id="wizardModal" class="modal-overlay hidden">
+<div id="wizardModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wizardTitle">
   <div class="modal" style="max-width: 520px;">
     <h3 id="wizardTitle">Pridať dom</h3>
     <p class="modal-sub" id="wizardSub">Pomenuj dom a vyber meradlá, ktoré budeš sledovať.</p>
@@ -2175,11 +2260,11 @@
     <div class="wizard-step">
       <div class="wizard-step-title">1 · Základné údaje</div>
       <div class="field">
-        <label>Názov domu</label>
+        <label for="wizName">Názov domu</label>
         <input type="text" id="wizName" placeholder="napr. Rodičovský dom">
       </div>
       <div class="field">
-        <label>Adresa (voliteľné)</label>
+        <label for="wizAddress">Adresa (voliteľné)</label>
         <input type="text" id="wizAddress" placeholder="napr. Jozefov 12, Trnava">
       </div>
     </div>
@@ -2197,17 +2282,17 @@
 </div>
 
 <!-- EDIT HOUSEHOLD MODAL -->
-<div id="hhEditModal" class="modal-overlay hidden">
+<div id="hhEditModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="hhEditTitle">
   <div class="modal">
-    <h3>Upraviť dom</h3>
+    <h3 id="hhEditTitle">Upraviť dom</h3>
     <p class="modal-sub">Zmena meradiel ovplyvní len pre nové odpočty.</p>
 
     <div class="field">
-      <label>Názov</label>
+      <label for="hhEditName">Názov</label>
       <input type="text" id="hhEditName">
     </div>
     <div class="field">
-      <label>Adresa</label>
+      <label for="hhEditAddress">Adresa</label>
       <input type="text" id="hhEditAddress">
     </div>
 
@@ -2219,9 +2304,9 @@
 </div>
 
 <!-- EXCEL IMPORT PREVIEW MODAL -->
-<div id="excelImportModal" class="modal-overlay hidden">
+<div id="excelImportModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="excelImportTitle">
   <div class="modal" style="max-width: 600px;">
-    <h3>Import z Excelu</h3>
+    <h3 id="excelImportTitle">Import z Excelu</h3>
     <div id="excelImportBody">
       <div class="share-empty">Načítavam…</div>
     </div>
@@ -2234,9 +2319,9 @@
 </div>
 
 <!-- SHARE CODE DISPLAY MODAL -->
-<div id="shareCodeModal" class="modal-overlay hidden">
+<div id="shareCodeModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shareCodeTitle">
   <div class="modal">
-    <h3>Pozvánka pre <span id="shareCodeHhName">—</span></h3>
+    <h3 id="shareCodeTitle">Pozvánka pre <span id="shareCodeHhName">—</span></h3>
     <p class="modal-sub">Pošli tento kód osobe, ktorej chceš dať prístup. Kód je jednorazový.</p>
 
     <div class="share-code-display" id="shareCodeText">SHARE-XXXX-XXXX</div>
@@ -2249,22 +2334,22 @@
 </div>
 
 <!-- EDIT READING MODAL -->
-<div id="editModal" class="modal-overlay hidden">
+<div id="editModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
   <div class="modal">
-    <h3>Upraviť odpočet</h3>
+    <h3 id="editModalTitle">Upraviť odpočet</h3>
     <p class="modal-sub" id="editSub"></p>
 
     <div class="field">
-      <label>Dátum</label>
+      <label for="editDate">Dátum</label>
       <input type="date" id="editDate">
     </div>
     <div class="field">
-      <label>Stav počítadla</label>
+      <label for="editValue">Stav počítadla</label>
       <input type="number" id="editValue" step="any">
       <div class="field-hint" id="editHint"></div>
     </div>
     <div class="field">
-      <label>Poznámka</label>
+      <label for="editNote">Poznámka</label>
       <input type="text" id="editNote">
     </div>
 
@@ -2276,7 +2361,7 @@
 </div>
 
 <!-- ADD READING MODAL — 4-step wizard -->
-<div id="addModal" class="modal-overlay hidden">
+<div id="addModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wizStepTitle">
   <div class="modal wizard-modal" style="max-width: 540px;">
     <div class="wizard-header">
       <h3 id="wizStepTitle">Nový odpočet</h3>
@@ -2308,7 +2393,7 @@
       </div>
 
       <div class="field">
-        <label>Stav počítadla</label>
+        <label for="addValue">Stav počítadla</label>
         <input type="number" id="addValue" step="any" inputmode="decimal" placeholder="napr. 21644">
         <div class="field-hint" id="addHint"></div>
       </div>
@@ -2318,7 +2403,7 @@
     <div class="wiz-step hidden" data-step="3">
       <p class="modal-sub">Kedy bol odpočet odčítaný? Voliteľne pridaj poznámku.</p>
       <div class="field">
-        <label>Dátum</label>
+        <label for="addDateText">Dátum</label>
         <div class="date-input-wrap">
           <input type="text" id="addDateText" placeholder="napr. 1.5.2026" inputmode="numeric" autocomplete="off">
           <button type="button" class="date-cal-btn" id="addDateCalBtn" aria-label="Otvoriť kalendár" aria-expanded="false">
@@ -2346,7 +2431,7 @@
         </div>
       </div>
       <div class="field">
-        <label>Poznámka (voliteľné)</label>
+        <label for="addNote">Poznámka (voliteľné)</label>
         <input type="text" id="addNote" placeholder="napr. fakturačný odpočet">
       </div>
     </div>
@@ -2366,25 +2451,25 @@
 </div>
 
 <!-- REPLACE DEVICE MODAL -->
-<div id="deviceModal" class="modal-overlay hidden">
+<div id="deviceModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deviceModalTitle">
   <div class="modal">
-    <h3>Výmena merača</h3>
+    <h3 id="deviceModalTitle">Výmena merača</h3>
     <p class="modal-sub">Zaznamenaj výmenu fyzického zariadenia. Stav starého a počiatočný stav nového môžu byť rôzne.</p>
 
     <div class="field">
-      <label>Meradlo</label>
+      <label for="devMeter">Meradlo</label>
       <select id="devMeter"></select>
     </div>
     <div class="field">
-      <label>Dátum výmeny</label>
+      <label for="devDate">Dátum výmeny</label>
       <input type="date" id="devDate">
     </div>
     <div class="field">
-      <label>Finálny stav starého merača</label>
+      <label for="devOldFinal">Finálny stav starého merača</label>
       <input type="number" id="devOldFinal" step="any">
     </div>
     <div class="field">
-      <label>Počiatočný stav nového merača</label>
+      <label for="devNewInit">Počiatočný stav nového merača</label>
       <input type="number" id="devNewInit" step="any" value="0">
     </div>
 
@@ -3922,12 +4007,14 @@ function renderHistoryFilterPills() {
   pills.innerHTML = '';
   const all = document.createElement('button');
   all.className = 'filter-pill' + (historyState.meterFilter === 'all' ? ' active' : '');
+  all.setAttribute('aria-pressed', historyState.meterFilter === 'all' ? 'true' : 'false');
   all.textContent = 'Všetky';
   all.addEventListener('click', () => { historyState.meterFilter = 'all'; renderHistory(); });
   pills.appendChild(all);
   for (const m of State.meters) {
     const p = document.createElement('button');
     p.className = 'filter-pill' + (historyState.meterFilter === m.pk ? ' active' : '');
+    p.setAttribute('aria-pressed', historyState.meterFilter === m.pk ? 'true' : 'false');
     p.innerHTML = `<span class="pill-dot" style="background: ${m.color}"></span>${escHtml(m.name)}`;
     p.addEventListener('click', () => { historyState.meterFilter = m.pk; renderHistory(); });
     pills.appendChild(p);
@@ -4071,7 +4158,7 @@ async function openEditModal(id) {
   document.getElementById('editNote').value = r.note || '';
   document.getElementById('editHint').textContent = '';
   document.getElementById('editHint').className = 'field-hint';
-  document.getElementById('editModal').classList.remove('hidden');
+  openModal(document.getElementById('editModal'));
 }
 
 async function updateEditHint() {
@@ -4138,7 +4225,7 @@ async function saveEdit() {
   }
 
   await db.readings.update(editingId, { date: newDate, value: newValue, note: newNote });
-  document.getElementById('editModal').classList.add('hidden');
+  closeModal(document.getElementById('editModal'));
   editingId = null;
   toast('Zmeny uložené');
   await refresh();
@@ -4373,7 +4460,7 @@ let wizCurrentStep = 1;
 
 function openAddModal(presetMeterPk = null) {
   if (!ensureWritable()) return;
-  document.getElementById('addModal').classList.remove('hidden');
+  openModal(document.getElementById('addModal'));
   setAddDateValue(new Date().toISOString().split('T')[0]);  // dnes, format-uje aj text input
   document.getElementById('addValue').value = '';
   document.getElementById('addNote').value = '';
@@ -4738,7 +4825,7 @@ async function saveReading() {
     deviceId: activeDev.id,
     date, value, note
   });
-  document.getElementById('addModal').classList.add('hidden');
+  closeModal(document.getElementById('addModal'));
   toast('Odpočet uložený');
   await refresh();
   schedulePush();
@@ -4750,7 +4837,7 @@ async function saveReading() {
 
 function openDeviceModal() {
   if (!ensureWritable()) return;
-  document.getElementById('deviceModal').classList.remove('hidden');
+  openModal(document.getElementById('deviceModal'));
   document.getElementById('devDate').value = new Date().toISOString().split('T')[0];
   // populate meter select
   const sel = document.getElementById('devMeter');
@@ -4780,7 +4867,7 @@ async function saveDevice() {
     meterPk,
     installedDate: date, initialValue: newInit, replacedDate: null, finalValue: null
   });
-  document.getElementById('deviceModal').classList.add('hidden');
+  closeModal(document.getElementById('deviceModal'));
   toast('Výmena zaznamenaná');
   await refresh();
   schedulePush();
@@ -4907,12 +4994,85 @@ async function resetAll() {
    ============================================================= */
 
 function toast(msg, isError = false) {
+  // Live region kontajner (vytvorí sa raz) — oznamovač pre čítačky obrazovky
+  let region = document.getElementById('toastRegion');
+  if (!region) {
+    region = document.createElement('div');
+    region.id = 'toastRegion';
+    region.setAttribute('aria-live', 'polite');
+    region.setAttribute('aria-atomic', 'false');
+    document.body.appendChild(region);
+  }
   const t = document.createElement('div');
   t.className = 'toast' + (isError ? ' error' : '');
+  // Chyba = assertive (alert), úspech = polite (status)
+  t.setAttribute('role', isError ? 'alert' : 'status');
   t.textContent = msg;
-  document.body.appendChild(t);
+  region.appendChild(t);
   setTimeout(() => t.remove(), 2200);
 }
+
+
+/* =============================================================
+   MODÁLY — správa fokusu (a11y): presun fokusu dnu, trap Tab,
+   Escape zavrie, návrat fokusu na otvárača po zavretí.
+   openModal/closeModal používajú existujúce .hidden prepínanie.
+   ============================================================= */
+const MODAL_FOCUSABLE_SEL = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getModalFocusable(container) {
+  // Len viditeľné prvky (wizard skrýva kroky cez .hidden → offsetParent === null)
+  return Array.from(container.querySelectorAll(MODAL_FOCUSABLE_SEL))
+    .filter(el => el.offsetParent !== null);
+}
+
+function openModal(overlay) {
+  if (!overlay) return;
+  // Zapamätaj otvárača, aby sme vrátili fokus po zavretí
+  overlay.__opener = document.activeElement;
+  overlay.classList.remove('hidden');
+  const focusables = getModalFocusable(overlay);
+  if (focusables.length) {
+    focusables[0].focus();
+  } else {
+    const modal = overlay.querySelector('.modal') || overlay;
+    modal.setAttribute('tabindex', '-1');
+    modal.focus();
+  }
+}
+
+function closeModal(overlay) {
+  if (!overlay) return;
+  overlay.classList.add('hidden');
+  const opener = overlay.__opener;
+  overlay.__opener = null;
+  if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
+    opener.focus();
+  }
+}
+
+// Globálny keydown: Escape zavrie najvrchnejší otvorený modal; Tab je uväznený vnútri
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' && e.key !== 'Tab') return;
+  const open = Array.from(document.querySelectorAll('.modal-overlay:not(.hidden)')).pop();
+  if (!open) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeModal(open);
+    return;
+  }
+  // Tab-trap vnútri modalu
+  const focusables = getModalFocusable(open);
+  if (!focusables.length) { e.preventDefault(); return; }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  if (e.shiftKey) {
+    if (active === first || !open.contains(active)) { e.preventDefault(); last.focus(); }
+  } else {
+    if (active === last || !open.contains(active)) { e.preventDefault(); first.focus(); }
+  }
+});
 
 
 /* =============================================================
@@ -5050,7 +5210,13 @@ async function renderDashboardCosts() {
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('.tab, .bottom-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.tab, .bottom-tab').forEach(t => {
+    const isActive = t.dataset.tab === tab;
+    t.classList.toggle('active', isActive);
+    // aria-current oznámi aktívny tab čítačkám obrazovky
+    if (isActive) t.setAttribute('aria-current', 'page');
+    else t.removeAttribute('aria-current');
+  });
   document.querySelectorAll('section[id^="tab-"]').forEach(s => {
     s.classList.toggle('hidden', s.id !== 'tab-' + tab);
   });
@@ -5147,7 +5313,7 @@ async function switchHousehold(hhId) {
 let wizardEditingId = null;
 
 function openWizard() {
-  document.getElementById('wizardModal').classList.remove('hidden');
+  openModal(document.getElementById('wizardModal'));
   document.getElementById('wizardTitle').textContent = 'Pridať nový dom';
   document.getElementById('wizardSub').textContent = 'Pomenuj dom a vyber meradlá, ktoré budeš sledovať.';
   document.getElementById('wizName').value = '';
@@ -5198,7 +5364,7 @@ async function saveWizard() {
     });
   }
 
-  document.getElementById('wizardModal').classList.add('hidden');
+  closeModal(document.getElementById('wizardModal'));
   toast('Dom "' + name + '" vytvorený');
 
   await switchHousehold(hhId);
@@ -5250,7 +5416,7 @@ async function openHouseholdEdit(id) {
   editingHouseholdId = id;
   document.getElementById('hhEditName').value = h.name;
   document.getElementById('hhEditAddress').value = h.address || '';
-  document.getElementById('hhEditModal').classList.remove('hidden');
+  openModal(document.getElementById('hhEditModal'));
 }
 
 async function saveHouseholdEdit() {
@@ -5259,7 +5425,7 @@ async function saveHouseholdEdit() {
   const address = document.getElementById('hhEditAddress').value.trim();
   if (!name) { toast('Názov je povinný', true); return; }
   await db.households.update(editingHouseholdId, { name, address });
-  document.getElementById('hhEditModal').classList.add('hidden');
+  closeModal(document.getElementById('hhEditModal'));
   editingHouseholdId = null;
   if (State.activeHouseholdId) await loadActiveHousehold();
   toast('Uložené');
@@ -5434,7 +5600,7 @@ async function generateInvite(localHhId) {
     if (!error) {
       document.getElementById('shareCodeHhName').textContent = h.name;
       document.getElementById('shareCodeText').textContent = code;
-      document.getElementById('shareCodeModal').classList.remove('hidden');
+      openModal(document.getElementById('shareCodeModal'));
       await renderSharingCard();
       return;
     }
@@ -5520,11 +5686,11 @@ document.addEventListener('click', (e) => {
 });
 document.getElementById('btnAddHousehold').addEventListener('click', openWizard);
 document.getElementById('btnWizCancel').addEventListener('click', () => {
-  document.getElementById('wizardModal').classList.add('hidden');
+  closeModal(document.getElementById('wizardModal'));
 });
 document.getElementById('btnWizSave').addEventListener('click', saveWizard);
 document.getElementById('btnHhEditCancel').addEventListener('click', () => {
-  document.getElementById('hhEditModal').classList.add('hidden');
+  closeModal(document.getElementById('hhEditModal'));
   editingHouseholdId = null;
 });
 document.getElementById('btnHhEditSave').addEventListener('click', saveHouseholdEdit);
@@ -5535,7 +5701,7 @@ document.getElementById('shareCodeInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') claimCode();
 });
 document.getElementById('btnShareCodeClose').addEventListener('click', () => {
-  document.getElementById('shareCodeModal').classList.add('hidden');
+  closeModal(document.getElementById('shareCodeModal'));
 });
 document.getElementById('btnShareCodeCopy').addEventListener('click', async () => {
   const code = document.getElementById('shareCodeText').textContent;
@@ -5579,7 +5745,7 @@ if (fileXlsImport) fileXlsImport.addEventListener('change', async (e) => {
 });
 document.getElementById('btnExcelImportCancel').addEventListener('click', () => {
   pendingExcelImport = null;
-  document.getElementById('excelImportModal').classList.add('hidden');
+  closeModal(document.getElementById('excelImportModal'));
 });
 document.getElementById('btnExcelImportOverwrite').addEventListener('click', () => performExcelImport(true));
 document.getElementById('btnExcelImportKeep').addEventListener('click', () => performExcelImport(false));
@@ -5605,7 +5771,7 @@ window.addEventListener('appinstalled', () => {
   document.getElementById('installCard')?.classList.add('hidden');
 });
 document.getElementById('btnAddTop').addEventListener('click', () => openAddModal());
-document.getElementById('btnCancel').addEventListener('click', () => { document.getElementById('addModal').classList.add('hidden'); });
+document.getElementById('btnCancel').addEventListener('click', () => { closeModal(document.getElementById('addModal')); });
 // Wizard navigation
 document.getElementById('btnWizBack').addEventListener('click', () => {
   if (wizCurrentStep > 1) wizGoTo(wizCurrentStep - 1);
@@ -5618,7 +5784,7 @@ document.getElementById('btnWizNext').addEventListener('click', async () => {
     await saveReading();
   }
 });
-document.getElementById('btnDevCancel').addEventListener('click', () => document.getElementById('deviceModal').classList.add('hidden'));
+document.getElementById('btnDevCancel').addEventListener('click', () => closeModal(document.getElementById('deviceModal')));
 document.getElementById('btnDevSave').addEventListener('click', saveDevice);
 document.getElementById('btnReplaceDevice').addEventListener('click', openDeviceModal);
 document.getElementById('btnExport').addEventListener('click', exportData);
@@ -5688,7 +5854,7 @@ document.querySelectorAll('th.sortable').forEach(th => {
 
 // Edit modal
 document.getElementById('btnEditCancel').addEventListener('click', () => {
-  document.getElementById('editModal').classList.add('hidden');
+  closeModal(document.getElementById('editModal'));
   editingId = null;
 });
 document.getElementById('btnEditSave').addEventListener('click', saveEdit);
@@ -5938,7 +6104,7 @@ async function handleExcelImportFile(file) {
   const modal = document.getElementById('excelImportModal');
   const body = document.getElementById('excelImportBody');
   const actions = document.getElementById('excelImportActions');
-  modal.classList.remove('hidden');
+  openModal(modal);
   actions.style.display = 'none';
   body.innerHTML = '<div class="loading-row"><span class="spinner" aria-hidden="true"></span>Parsujem Excel…</div>';
 
@@ -6075,7 +6241,7 @@ async function performExcelImport(overwriteConflicts) {
   }
 
   pendingExcelImport = null;
-  document.getElementById('excelImportModal').classList.add('hidden');
+  closeModal(document.getElementById('excelImportModal'));
 
   const parts = [`+${inserted} nových`];
   if (updated) parts.push(`${updated} prepísaných`);
@@ -6408,7 +6574,10 @@ function applyTheme(mode) {
   }
   // Update segmented control if present
   document.querySelectorAll('.theme-seg').forEach(b => {
-    b.classList.toggle('active', b.dataset.themeMode === mode);
+    const isActive = b.dataset.themeMode === mode;
+    b.classList.toggle('active', isActive);
+    // aria-checked pre role="radio" — stav pre čítačky obrazovky
+    b.setAttribute('aria-checked', isActive ? 'true' : 'false');
   });
 }
 
