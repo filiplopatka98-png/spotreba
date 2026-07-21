@@ -8,7 +8,7 @@
 <!-- Content Security Policy — defense-in-depth proti XSS / supply chain útokom -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com;
   connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net;
   img-src 'self' data: blob:;
   style-src 'self' 'unsafe-inline';
@@ -60,6 +60,11 @@
       document.documentElement.setAttribute('data-theme', 'light');
     }
   })();
+</script>
+<!-- Clickjacking ochrana pre GitHub Pages, kde .htaccess X-Frame-Options /
+     frame-ancestors neplatí. Ak nás niekto vnorí do <iframe>, vyskočíme na top. -->
+<script>
+  try { if (self !== top) top.location.href = self.location.href; } catch (e) { /* cross-origin frame — busting môže byť blokované, akceptujeme */ }
 </script>
 <!-- Eager: Dexie + Supabase potrebné pri startApp pre auth + lokálnu DB -->
 <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"
@@ -2897,7 +2902,14 @@ async function cloudDeleteReading(localId) {
   const cloudId = Sync.maps.readings[localId];
   if (!cloudId || !Sync.user) return;
   const { error } = await sb.from('readings').delete().eq('id', cloudId);
-  if (error) console.error('cloud delete reading', error);
+  if (error) {
+    // Pri zlyhaní (offline/network) mapu NEČISTÍME — inak by pull cloud riadok
+    // znova stiahol ako "nový" (vzkriesenie zmazaného). Necháme retry na
+    // ďalší full-sync a upozorníme usera.
+    console.error('cloud delete reading', error);
+    toast('Zmazanie sa nepodarilo synchronizovať — skús neskôr', true);
+    return;
+  }
   delete Sync.rev.readings[cloudId];
   delete Sync.maps.readings[localId];
   await saveSyncMaps();
@@ -2908,7 +2920,12 @@ async function cloudDeleteHousehold(localId) {
   if (!cloudId || !Sync.user) return;
   // cascade na serveri zmaže meters, devices, readings
   const { error } = await sb.from('households').delete().eq('id', cloudId);
-  if (error) console.error('cloud delete household', error);
+  if (error) {
+    // Viď cloudDeleteReading — mapu čistíme len pri úspechu.
+    console.error('cloud delete household', error);
+    toast('Zmazanie domu sa nepodarilo synchronizovať — skús neskôr', true);
+    return;
+  }
   // vyčisti mapy pre tento dom
   delete Sync.rev.households[cloudId];
   delete Sync.maps.households[localId];
@@ -3557,6 +3574,29 @@ async function getReadings(meterPk) {
   return rs;
 }
 
+// Parsuje 'YYYY-MM-DD' ako LOKÁLNU polnoc (nie UTC) — inak západne od UTC
+// padne odpočet z 1. dňa do zlého mesiaca (viď monthlyConsumption).
+function parseLocalDate(iso) {
+  if (iso instanceof Date) return iso;
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return new Date(iso);
+  return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+}
+
+// Jediný zdroj pravdy pre výpočet spotreby medzi dvoma stavmi — korektne cez
+// výmenu merača a odolne voči chýbajúcim/null device záznamom (partial sync,
+// import, zdieľaný dom). Chýbajúci device alebo null final/initial → best-effort
+// priamy rozdiel namiesto TypeError/NaN.
+function deltaBetween(prevVal, prevDeviceId, curVal, curDeviceId, devices) {
+  if (prevDeviceId === curDeviceId) return curVal - prevVal;
+  const oldDev = devices.find(d => d.id === prevDeviceId);
+  const newDev = devices.find(d => d.id === curDeviceId);
+  if (!oldDev || !newDev) return curVal - prevVal;
+  const oldFinal = oldDev.finalValue != null ? oldDev.finalValue : prevVal;
+  const newInit = newDev.initialValue != null ? newDev.initialValue : 0;
+  return (oldFinal - prevVal) + (curVal - newInit);
+}
+
 // Spočíta spotrebu medzi dvoma odpočtami, korektne cez výmenu merača.
 async function computeDeltas(meterPk) {
   const readings = await getReadings(meterPk);
@@ -3565,14 +3605,7 @@ async function computeDeltas(meterPk) {
   for (let i = 1; i < readings.length; i++) {
     const a = readings[i-1];
     const b = readings[i];
-    let delta;
-    if (a.deviceId === b.deviceId) {
-      delta = b.value - a.value;
-    } else {
-      const oldDev = devices.find(d => d.id === a.deviceId);
-      const newDev = devices.find(d => d.id === b.deviceId);
-      delta = (oldDev.finalValue - a.value) + (b.value - newDev.initialValue);
-    }
+    const delta = deltaBetween(a.value, a.deviceId, b.value, b.deviceId, devices);
     out.push({ from: a.date, to: b.date, delta, reading: b });
   }
   return out;
@@ -3583,8 +3616,8 @@ async function monthlyConsumption(meterPk) {
   const deltas = await computeDeltas(meterPk);
   const months = {};
   for (const { from, to, delta } of deltas) {
-    const dFrom = new Date(from);
-    const dTo = new Date(to);
+    const dFrom = parseLocalDate(from);
+    const dTo = parseLocalDate(to);
     const totalDays = (dTo - dFrom) / 86400000;
     if (totalDays <= 0) continue;
     const perDay = delta / totalDays;
@@ -4063,7 +4096,6 @@ async function updateEditHint() {
   if (after && newDate >= after.date) issues.push(`Dátum musí byť pred ${fmtDate(after.date)}`);
 
   const devices = await db.devices.where('meterPk').equals(r.meterPk).toArray();
-  const myDev = devices.find(d => d.id === r.deviceId);
   if (before && before.deviceId === r.deviceId && newValue < before.value) {
     issues.push(`Hodnota nižšia než predchádzajúca (${fmtNum(before.value)})`);
   }
@@ -4075,13 +4107,7 @@ async function updateEditHint() {
     hint.className = 'field-hint bad';
     hint.textContent = '⚠ ' + issues.join(' · ');
   } else if (before) {
-    let delta;
-    if (before.deviceId === r.deviceId) {
-      delta = newValue - before.value;
-    } else {
-      const oldDev = devices.find(d => d.id === before.deviceId);
-      delta = (oldDev.finalValue - before.value) + (newValue - myDev.initialValue);
-    }
+    const delta = deltaBetween(before.value, before.deviceId, newValue, r.deviceId, devices);
     const days = Math.max(1, (new Date(newDate) - new Date(before.date)) / 86400000);
     hint.textContent = `Spotreba: ${fmtNum(delta, 0)} ${def.unit} za ${Math.round(days)} dní`;
   }
@@ -4201,15 +4227,7 @@ async function renderChart() {
     let prev = null;
     for (const r of readings) {
       if (prev) {
-        let delta;
-        if (prev.deviceId === r.deviceId) {
-          delta = r.value - prev.value;
-        } else {
-          const oldDev = devices.find(d => d.id === prev.deviceId);
-          const newDev = devices.find(d => d.id === r.deviceId);
-          delta = (oldDev.finalValue - prev.value) + (r.value - newDev.initialValue);
-        }
-        cum += delta;
+        cum += deltaBetween(prev.value, prev.deviceId, r.value, r.deviceId, devices);
       } else {
         cum = 0;
       }
@@ -4383,38 +4401,44 @@ function openAddModal(presetMeterPk = null) {
   }
   addPickedMeter = presetMeterPk;
 
-  document.getElementById('addValue').addEventListener('input', updateAddHint);
-  document.getElementById('addDateText').addEventListener('input', (e) => {
-    // User typed → parse a sync to hidden ISO date
-    const iso = parseDateInput(e.target.value);
-    const dateInput = document.getElementById('addDate');
-    if (iso) {
-      dateInput.value = iso;
-      e.target.classList.remove('invalid');
-      updateAddHint();
-    } else if (e.target.value.trim() === '') {
-      dateInput.value = '';
-      e.target.classList.remove('invalid');
-    } else {
-      e.target.classList.add('invalid');
-    }
-  });
-  document.getElementById('addDateCalBtn').addEventListener('click', () => {
-    const cal = document.getElementById('customCal');
-    if (cal.classList.contains('hidden')) {
-      ccOpen(document.getElementById('addDate').value);
-    } else {
+  // Listenery naviazať IBA RAZ — inak sa pri každom otvorení modálu nakopia
+  // duplikáty (updateAddHint by bežal N× na klávesu, kalendár by skákal o N
+  // mesiacov na klik).
+  if (!openAddModal._bound) {
+    openAddModal._bound = true;
+    document.getElementById('addValue').addEventListener('input', updateAddHint);
+    document.getElementById('addDateText').addEventListener('input', (e) => {
+      // User typed → parse a sync to hidden ISO date
+      const iso = parseDateInput(e.target.value);
+      const dateInput = document.getElementById('addDate');
+      if (iso) {
+        dateInput.value = iso;
+        e.target.classList.remove('invalid');
+        updateAddHint();
+      } else if (e.target.value.trim() === '') {
+        dateInput.value = '';
+        e.target.classList.remove('invalid');
+      } else {
+        e.target.classList.add('invalid');
+      }
+    });
+    document.getElementById('addDateCalBtn').addEventListener('click', () => {
+      const cal = document.getElementById('customCal');
+      if (cal.classList.contains('hidden')) {
+        ccOpen(document.getElementById('addDate').value);
+      } else {
+        ccClose();
+      }
+    });
+    document.getElementById('ccPrev').addEventListener('click', ccPrev);
+    document.getElementById('ccNext').addEventListener('click', ccNext);
+    document.getElementById('ccCancel').addEventListener('click', ccClose);
+    document.getElementById('ccToday').addEventListener('click', () => {
+      setAddDateValue(todayIso());
       ccClose();
-    }
-  });
-  document.getElementById('ccPrev').addEventListener('click', ccPrev);
-  document.getElementById('ccNext').addEventListener('click', ccNext);
-  document.getElementById('ccCancel').addEventListener('click', ccClose);
-  document.getElementById('ccToday').addEventListener('click', () => {
-    setAddDateValue(todayIso());
-    ccClose();
-    updateAddHint();
-  });
+      updateAddHint();
+    });
+  }
   updateAddHint();
 
   // Štart na kroku 1 (alebo 2 ak meradlo už predvolené z dashboard click)
@@ -4663,7 +4687,7 @@ async function updateAddHint() {
       return;
     }
   } else if (lastDev && activeDev) {
-    delta = (lastDev.finalValue - last.value) + (value - activeDev.initialValue);
+    delta = deltaBetween(last.value, lastDev.id, value, activeDev.id, [lastDev, activeDev]);
   } else {
     return;
   }
@@ -4849,10 +4873,16 @@ async function importData(file) {
     if (data.settings) await db.settings.bulkAdd(data.settings);
   }
 
+  // db.settings.clear() zmazal aj perzistované 'syncMaps' → in-memory mapy sú
+  // teraz neplatné (ukazujú na staré cloud ID). Bez resetu by ďalší pushAll
+  // UPDATE-oval cudzie cloud riadky podľa starých cloudId. Resetneme na prázdno
+  // a naimportované dáta pushneme ako nové.
+  await loadSyncMaps();
   toast('Import hotový');
   await loadActiveHousehold();
   await refresh();
   renderHouseholdSwitcher();
+  schedulePush();
 }
 
 async function resetAll() {
@@ -4863,10 +4893,13 @@ async function resetAll() {
   await db.readings.clear();
   await db.settings.clear();
   await seedIfEmpty();
+  // Viď importData — po db.settings.clear() treba resetnúť sync mapy.
+  await loadSyncMaps();
   await loadActiveHousehold();
   toast('Reset hotový — obnovené východiskové dáta');
   await refresh();
   renderHouseholdSwitcher();
+  schedulePush();
 }
 
 /* =============================================================
@@ -5269,9 +5302,17 @@ async function deleteHousehold(id) {
 
 const SHARE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'; // bez I,L,O,U,0,1
 function generateShareCode() {
-  const chunk = () => Array.from({ length: 4 }, () =>
-    SHARE_ALPHABET[Math.floor(Math.random() * SHARE_ALPHABET.length)]
-  ).join('');
+  // CSPRNG namiesto Math.random() — kód dáva read-access k domu, nesmie byť
+  // predvídateľný. Rejection sampling odstráni modulo bias.
+  const n = SHARE_ALPHABET.length;
+  const limit = 256 - (256 % n);
+  const buf = new Uint8Array(1);
+  const pick = () => {
+    let v;
+    do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= limit);
+    return SHARE_ALPHABET[v % n];
+  };
+  const chunk = () => Array.from({ length: 4 }, pick).join('');
   return `SHARE-${chunk()}-${chunk()}`;
 }
 
@@ -5297,7 +5338,7 @@ async function renderSharingCard() {
 
   const { data: shares, error } = await sb.from('household_shares').select('*').order('created_at');
   if (error) {
-    body.innerHTML = `<div class="share-empty">Chyba: ${error.message}</div>`;
+    body.innerHTML = `<div class="share-empty">Chyba: ${escHtml(error.message)}</div>`;
     return;
   }
   const owned = shares.filter(s => s.owner_id === Sync.user.id);
@@ -5582,7 +5623,17 @@ document.getElementById('btnDevSave').addEventListener('click', saveDevice);
 document.getElementById('btnReplaceDevice').addEventListener('click', openDeviceModal);
 document.getElementById('btnExport').addEventListener('click', exportData);
 document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
-document.getElementById('fileImport').addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
+document.getElementById('fileImport').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = ''; // umožní re-import toho istého súboru
+  if (!f) return;
+  try {
+    await importData(f);
+  } catch (err) {
+    console.error('import zlyhal', err);
+    toast('Import zlyhal — neplatný alebo poškodený súbor', true);
+  }
+});
 document.getElementById('btnReset').addEventListener('click', resetAll);
 document.getElementById('chartMeter').addEventListener('change', renderChart);
 document.getElementById('chartView').addEventListener('change', renderChart);
@@ -5708,9 +5759,12 @@ const SK_MONTHS_NOM = ['január','február','marec','apríl','máj','jún','júl
 
 async function loadXlsx() {
   if (window.XLSX) return window.XLSX;
+  // xlsx 0.18.5 mal CVE-2023-30533 (prototype pollution) + CVE-2024-22363
+  // (ReDoS) pri XLSX.read() na user-import súbore. 0.20.3 ich fixuje.
+  // SheetJS už nepublikuje na npm → oficiálny CDN cdn.sheetjs.com (viď CSP).
   await loadScriptOnce(
-    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
-    'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw'
+    'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+    'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT'
   );
   return window.XLSX;
 }
@@ -6557,7 +6611,7 @@ async function startApp() {
       <div style="max-width: 600px; margin: 80px auto; padding: 32px; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: #1c1c1e; background: #ffffff; border: 1px solid rgba(0,0,0,0.1); border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
         <h2 style="font-weight: 700; font-size: 28px; margin-bottom: 12px; letter-spacing: -0.02em;">Niečo sa pokazilo</h2>
         <p style="margin-bottom: 12px; color: #3c3c43;">Inicializácia appky zlyhala.</p>
-        <p style="margin-bottom: 20px; padding: 12px; background: #f2f2f7; border-radius: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 13px; color: #ff3b30;">${err.message}</p>
+        <p style="margin-bottom: 20px; padding: 12px; background: #f2f2f7; border-radius: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 13px; color: #ff3b30;">${escHtml(err.message)}</p>
         <button id="btnHardReset" style="margin-top: 24px; background: #ff3b30; color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; cursor: pointer; font-family: inherit;">Tvrdý reset (zmaže obe lokálne DB)</button>
       </div>
     `;
