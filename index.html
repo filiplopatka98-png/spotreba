@@ -3961,13 +3961,15 @@ async function renderCompareChart() {
 
   if (labels.length === 0) {
     // žiadne historické dáta – zobraz placeholder
-    ctx.font = '14px Inter';
-    ctx.fillStyle = '#75726c';
+    const t0 = chartTheme();
+    ctx.font = '14px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = t0.muted;
     ctx.textAlign = 'center';
     ctx.fillText('Zatiaľ nemáš dáta k porovnaniu.', ctx.canvas.width / 2, ctx.canvas.height / 2);
     return;
   }
 
+  const t = chartTheme();
   compareChart = new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets },
@@ -3975,23 +3977,23 @@ async function renderCompareChart() {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: '#b8b3a9', font: { family: 'Inter' } } },
+        legend: { labels: { color: t.text } },
         title: {
           display: true,
           text: now.toLocaleDateString('sk-SK', { month: 'long' }).toUpperCase() + ' — porovnanie cez roky',
-          color: '#75726c', font: { family: 'JetBrains Mono', size: 11, weight: 'normal' }
+          color: t.muted, font: { size: 11, weight: 'normal' }
         },
         tooltip: {
-          backgroundColor: '#1d2024',
-          titleColor: '#f4ede4',
-          bodyColor: '#b8b3a9',
-          borderColor: '#383d44',
+          backgroundColor: t.tooltipBg,
+          titleColor: t.tooltipText,
+          bodyColor: t.text,
+          borderColor: t.tooltipBorder,
           borderWidth: 1
         }
       },
       scales: {
-        x: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } },
-        y: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } }
+        x: { ticks: { color: t.muted }, grid: { color: t.grid } },
+        y: { ticks: { color: t.muted }, grid: { color: t.grid } }
       }
     }
   });
@@ -4322,8 +4324,8 @@ async function renderChart() {
 
   // Ak meradlo nie je v aktívnom dome, daj placeholder
   if (meterType !== 'electricity_net' && !meterPk) {
-    ctx.font = '14px Inter';
-    ctx.fillStyle = '#75726c';
+    ctx.font = '14px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = chartTheme().muted;
     ctx.textAlign = 'center';
     ctx.fillText('Toto meradlo nie je v aktívnom dome.', ctx.canvas.width / 2, ctx.canvas.height / 2);
     return;
@@ -4335,8 +4337,8 @@ async function renderChart() {
       const inMeter = meterByType('electricity_in');
       const outMeter = meterByType('electricity_out');
       if (!inMeter || !outMeter) {
-        ctx.font = '14px Inter';
-        ctx.fillStyle = '#75726c';
+        ctx.font = '14px -apple-system, system-ui, sans-serif';
+        ctx.fillStyle = chartTheme().muted;
         ctx.textAlign = 'center';
         ctx.fillText('Pre netto bilanciu treba aj odber aj predaj.', ctx.canvas.width / 2, ctx.canvas.height / 2);
         return;
@@ -4444,17 +4446,33 @@ async function renderChart() {
   });
 }
 
+// Farby grafov z CSS premenných → grafy sledujú light/dark tému (predtým
+// natvrdo dark → v light móde nečitateľná legenda a stále tmavý tooltip).
+function chartTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n, fb) => (cs.getPropertyValue(n).trim() || fb);
+  return {
+    text: v('--ink-2', '#3c3c43'),
+    muted: v('--ink-3', '#6d6d72'),
+    grid: v('--line', 'rgba(60,60,67,0.18)'),
+    tooltipBg: v('--bg-2', '#ffffff'),
+    tooltipText: v('--ink', '#1c1c1e'),
+    tooltipBorder: v('--line-2', 'rgba(60,60,67,0.36)')
+  };
+}
+
 function chartOpts(unit) {
+  const t = chartTheme();
   return {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { labels: { color: '#b8b3a9' } },
+      legend: { labels: { color: t.text } },
       tooltip: {
-        backgroundColor: '#1d2024',
-        titleColor: '#f4ede4',
-        bodyColor: '#b8b3a9',
-        borderColor: '#383d44',
+        backgroundColor: t.tooltipBg,
+        titleColor: t.tooltipText,
+        bodyColor: t.text,
+        borderColor: t.tooltipBorder,
         borderWidth: 1,
         callbacks: {
           label: (c) => `${c.dataset.label}: ${fmtNum(c.parsed.y, 0)} ${unit}`
@@ -4462,8 +4480,8 @@ function chartOpts(unit) {
       }
     },
     scales: {
-      x: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } },
-      y: { ticks: { color: '#75726c' }, grid: { color: '#2a2e34' } }
+      x: { ticks: { color: t.muted }, grid: { color: t.grid } },
+      y: { ticks: { color: t.muted }, grid: { color: t.grid } }
     }
   };
 }
@@ -6664,6 +6682,11 @@ function applyTheme(mode) {
     // aria-checked pre role="radio" — stav pre čítačky obrazovky
     b.setAttribute('aria-checked', isActive ? 'true' : 'false');
   });
+  // Grafy čítajú farby z CSS premenných → po zmene témy ich prekresli.
+  const appRoot = document.getElementById('appRoot');
+  if (typeof refresh === 'function' && appRoot && !appRoot.classList.contains('hidden')) {
+    refresh();
+  }
 }
 
 // React to OS dark/light change while in 'system' mode
