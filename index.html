@@ -627,6 +627,20 @@
   }
   .toast.error { background: var(--bad); color: #fff; }
   @keyframes toastIn { from { transform: translate(-50%, 12px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+  /* Toast s akčným tlačidlom (napr. Späť pri mazaní odpočtu) */
+  .toast.toast-with-action { display: inline-flex; align-items: center; gap: 14px; }
+  .toast-action {
+    background: rgba(0, 0, 0, 0.15);
+    color: inherit;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .toast-action:hover { background: rgba(0, 0, 0, 0.28); }
 
   /* HEADER ANNOTATION FOR DEVICE CHANGE */
   .device-banner {
@@ -4192,12 +4206,24 @@ async function renderHistory() {
   tbody.querySelectorAll('button[data-action="delete"]').forEach(b => {
     b.addEventListener('click', async (e) => {
       const id = parseInt(e.currentTarget.dataset.id);
-      if (confirm('Zmazať tento odpočet?')) {
-        await cloudDeleteReading(id);
-        await db.readings.delete(id);
-        toast('Odpočet zmazaný');
+      // Optimistické mazanie + undo okno. Cloud delete ODLOŽÍME na koniec okna,
+      // takže Sync.maps.readings[id] ostáva nedotknutá počas undo → undo je len
+      // lacný lokálny re-insert (cloud riadok nikdy nezmizne, kým čakáme).
+      const r = await db.readings.get(id);
+      if (!r) return;                    // už zmazaný — nič nerob
+      await db.readings.delete(id);
+      await refresh();
+      // Vlastný closure per-mazanie: nezávislý timer + zachytený záznam `r`.
+      const cloudTimer = setTimeout(async () => {
+        await cloudDeleteReading(id);    // mapa je stále prítomná → zmaže cloud riadok
+      }, UNDO_DURATION_MS);
+      toastAction('Odpočet zmazaný', 'Späť', async () => {
+        clearTimeout(cloudTimer);        // zruš odložený cloud delete
+        await db.readings.put(r);        // re-insert s PÔVODNÝM id (mapa sedí)
         await refresh();
-      }
+        schedulePush();                  // udrž lokál↔cloud konzistentné
+        toast('Obnovené');
+      });
     });
   });
   tbody.querySelectorAll('button[data-action="edit"]').forEach(b => {
@@ -4285,10 +4311,10 @@ async function saveEdit() {
   if (after && newDate >= after.date) { toast('Dátum musí byť pred ' + fmtDate(after.date), true); return; }
 
   if (before && before.deviceId === r.deviceId && newValue < before.value) {
-    if (!confirm('Hodnota klesla pod predchádzajúcu. Naozaj?')) return;
+    if (!await confirmModal({ title: 'Potvrdiť uloženie', message: 'Hodnota klesla pod predchádzajúcu. Naozaj uložiť?' })) return;
   }
   if (after && after.deviceId === r.deviceId && newValue > after.value) {
-    if (!confirm('Hodnota stúpla nad nasledujúcu. Naozaj?')) return;
+    if (!await confirmModal({ title: 'Potvrdiť uloženie', message: 'Hodnota stúpla nad nasledujúcu. Naozaj uložiť?' })) return;
   }
 
   await db.readings.update(editingId, { date: newDate, value: newValue, note: newNote });
@@ -4909,7 +4935,7 @@ async function saveReading() {
   if (!activeDev) { toast('Neexistuje aktívne zariadenie', true); return; }
 
   if (last && last.deviceId === activeDev.id && value < last.value) {
-    if (!confirm('Hodnota je nižšia než predchádzajúca. Naozaj uložiť?')) return;
+    if (!await confirmModal({ title: 'Potvrdiť uloženie', message: 'Hodnota je nižšia než predchádzajúca. Naozaj uložiť?' })) return;
   }
 
   await db.readings.add({
@@ -5025,7 +5051,7 @@ async function reconcileCloudAfterLocalReplace(wipeCloud) {
 async function importData(file) {
   const text = await file.text();
   const data = JSON.parse(text);
-  if (!confirm('Import nahradí všetky aktuálne dáta — lokálne aj v cloude. Pokračovať?')) return;
+  if (!await confirmModal({ title: 'Importovať dáta', message: 'Import nahradí všetky aktuálne dáta — lokálne aj v cloude. Pokračovať?', confirmLabel: 'Importovať', danger: true })) return;
 
   await db.households.clear();
   await db.meters.clear();
@@ -5094,7 +5120,7 @@ async function importData(file) {
 }
 
 async function resetAll() {
-  if (!confirm('Naozaj vymazať VŠETKY dáta (lokálne aj v cloude)? Nedá sa vrátiť späť.')) return;
+  if (!await confirmModal({ title: 'Vymazať všetky dáta', message: 'Naozaj vymazať VŠETKY dáta (lokálne aj v cloude)? Nedá sa vrátiť späť.', confirmLabel: 'Vymazať všetko', danger: true })) return;
   await db.households.clear();
   await db.meters.clear();
   await db.devices.clear();
@@ -5127,6 +5153,159 @@ function toast(msg, isError = false) {
   t.textContent = msg;
   region.appendChild(t);
   setTimeout(() => t.remove(), TOAST_DURATION_MS);
+}
+
+// Toast s akčným tlačidlom (undo). Kliknutie na tlačidlo zavolá onAction()
+// a toast zmizne; inak sa sám odstráni po `duration`. Text ide cez textContent
+// (žiadny XSS). Každé volanie má vlastný closure (nezávislé timery).
+function toastAction(msg, actionLabel, onAction, duration = UNDO_DURATION_MS) {
+  let region = document.getElementById('toastRegion');
+  if (!region) {
+    region = document.createElement('div');
+    region.id = 'toastRegion';
+    region.setAttribute('aria-live', 'polite');
+    region.setAttribute('aria-atomic', 'false');
+    document.body.appendChild(region);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast toast-with-action';
+  t.setAttribute('role', 'status');
+  const span = document.createElement('span');
+  span.textContent = msg;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-action';
+  btn.textContent = actionLabel;
+  let done = false;
+  const remove = () => { if (t.parentNode) t.remove(); };
+  const timer = setTimeout(() => { done = true; remove(); }, duration);
+  btn.addEventListener('click', () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    remove();
+    onAction();
+  });
+  t.appendChild(span);
+  t.appendChild(btn);
+  region.appendChild(t);
+}
+
+
+/* =============================================================
+   CONFIRM / ALERT MODÁLY — vlastná náhrada natívnych confirm()/alert().
+   Vracajú Promise. Kľúčová garancia: resolve zavolá práve raz, a keď sa
+   overlay skryje AKOUKOĽVEK cestou (Escape, klik mimo, Zrušiť) → resolve(false).
+   Sledujeme to MutationObserverom na .class overlaya (globálny Escape handler
+   volá closeModal → pridá .hidden → observer → resolve(false)).
+   ============================================================= */
+let _confirmModalEl = null;
+function ensureConfirmModal() {
+  if (_confirmModalEl && document.body.contains(_confirmModalEl)) return _confirmModalEl;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay hidden';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'confirmModalTitle');
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3 id="confirmModalTitle"></h3>
+      <p class="modal-sub" id="confirmModalMsg"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="confirmModalCancel" type="button"></button>
+        <button class="btn" id="confirmModalConfirm" type="button"></button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  _confirmModalEl = overlay;
+  return overlay;
+}
+
+function confirmModal({ title, message, confirmLabel = 'Potvrdiť', cancelLabel = 'Zrušiť', danger = false }) {
+  return new Promise((resolve) => {
+    const overlay = ensureConfirmModal();
+    const titleEl = overlay.querySelector('#confirmModalTitle');
+    const msgEl = overlay.querySelector('#confirmModalMsg');
+    const cancelBtn = overlay.querySelector('#confirmModalCancel');
+    const confirmBtn = overlay.querySelector('#confirmModalConfirm');
+
+    titleEl.textContent = title || '';
+    msgEl.textContent = message || '';           // textContent → bezpečné voči XSS
+    cancelBtn.textContent = cancelLabel;
+    cancelBtn.style.display = '';
+    confirmBtn.textContent = confirmLabel;
+    confirmBtn.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+
+    let settled = false;
+    let observer = null;
+    const onConfirm = () => finish(true);
+    const onCancel = () => finish(false);
+    const onBackdrop = (e) => { if (e.target === overlay) finish(false); };
+    function finish(result) {
+      if (settled) return;               // resolve práve raz
+      settled = true;
+      if (observer) observer.disconnect();
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onBackdrop);
+      if (!overlay.classList.contains('hidden')) closeModal(overlay);
+      resolve(result);
+    }
+
+    // Keď sa overlay skryje inou cestou (Escape) → default resolve(false)
+    observer = new MutationObserver(() => {
+      if (overlay.classList.contains('hidden')) finish(false);
+    });
+    observer.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onBackdrop);
+
+    openModal(overlay);
+    // Pri deštruktívnych dialógoch je bezpečnejší default fokus na Zrušiť
+    if (danger) cancelBtn.focus();
+  });
+}
+
+function alertModal({ title, message, okLabel = 'OK' }) {
+  return new Promise((resolve) => {
+    const overlay = ensureConfirmModal();
+    const titleEl = overlay.querySelector('#confirmModalTitle');
+    const msgEl = overlay.querySelector('#confirmModalMsg');
+    const cancelBtn = overlay.querySelector('#confirmModalCancel');
+    const confirmBtn = overlay.querySelector('#confirmModalConfirm');
+
+    titleEl.textContent = title || '';
+    msgEl.textContent = message || '';
+    cancelBtn.style.display = 'none';            // alert má len jedno tlačidlo
+    confirmBtn.textContent = okLabel;
+    confirmBtn.className = 'btn btn-primary';
+
+    let settled = false;
+    let observer = null;
+    const onConfirm = () => finish();
+    const onBackdrop = (e) => { if (e.target === overlay) finish(); };
+    function finish() {
+      if (settled) return;
+      settled = true;
+      if (observer) observer.disconnect();
+      confirmBtn.removeEventListener('click', onConfirm);
+      overlay.removeEventListener('click', onBackdrop);
+      cancelBtn.style.display = '';               // obnov pre budúce confirm dialógy
+      if (!overlay.classList.contains('hidden')) closeModal(overlay);
+      resolve();
+    }
+    observer = new MutationObserver(() => {
+      if (overlay.classList.contains('hidden')) finish();
+    });
+    observer.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+
+    confirmBtn.addEventListener('click', onConfirm);
+    overlay.addEventListener('click', onBackdrop);
+
+    openModal(overlay);
+  });
 }
 
 
@@ -5566,7 +5745,8 @@ async function deleteHousehold(id) {
   const all = await db.households.toArray();
   const ownedCount = all.filter(x => !x.is_shared).length;
   if (ownedCount === 1) { toast('Nemôžeš zmazať jediný vlastný dom', true); return; }
-  if (!confirm(`Naozaj zmazať dom "${h.name}" so všetkými dátami? Nedá sa vrátiť späť.`)) return;
+  // h.name ide cez message → confirmModal ho vykreslí cez textContent (bezpečné)
+  if (!await confirmModal({ title: 'Zmazať dom', message: `Naozaj zmazať dom "${h.name}" so všetkými dátami? Nedá sa vrátiť späť.`, confirmLabel: 'Zmazať dom', danger: true })) return;
 
   // cloud delete (cascade — zmaže aj všetky jeho shares)
   await cloudDeleteHousehold(id);
@@ -5773,7 +5953,7 @@ async function claimCode() {
 }
 
 async function revokeShare(shareId) {
-  if (!confirm('Naozaj zrušiť toto zdieľanie? Druhá strana okamžite stratí prístup.')) return;
+  if (!await confirmModal({ title: 'Zrušiť zdieľanie', message: 'Naozaj zrušiť toto zdieľanie? Druhá strana okamžite stratí prístup.', confirmLabel: 'Zrušiť zdieľanie', danger: true })) return;
   const { error } = await sb.from('household_shares').delete().eq('id', shareId);
   if (error) { toast('Chyba: ' + error.message, true); return; }
   toast('Zrušené');
@@ -5781,7 +5961,7 @@ async function revokeShare(shareId) {
 }
 
 async function leaveShare(shareId) {
-  if (!confirm('Odstrániť tento dom zo svojho zoznamu?')) return;
+  if (!await confirmModal({ title: 'Odstrániť dom', message: 'Odstrániť tento dom zo svojho zoznamu?', confirmLabel: 'Odstrániť' })) return;
   const { error } = await sb.from('household_shares').delete().eq('id', shareId);
   if (error) { toast('Chyba: ' + error.message, true); return; }
   toast('Odstránené — sťahujem zmeny…');
@@ -5956,7 +6136,7 @@ document.getElementById('btnSaveSettings').addEventListener('click', async () =>
 });
 document.getElementById('btnSaveTariffs').addEventListener('click', saveTariffs);
 document.getElementById('btnLogout').addEventListener('click', async () => {
-  if (!confirm('Odhlásiť sa? Lokálna DB zostane, ale po prihlásení sa znova natiahne z cloudu.')) return;
+  if (!await confirmModal({ title: 'Odhlásiť sa', message: 'Odhlásiť sa? Lokálna DB zostane, ale po prihlásení sa znova natiahne z cloudu.', confirmLabel: 'Odhlásiť sa' })) return;
   await signOut();
 });
 document.getElementById('btnFullSync').addEventListener('click', async () => {
@@ -6940,13 +7120,13 @@ async function startApp() {
       </div>
     `;
     document.getElementById('btnHardReset').addEventListener('click', async () => {
-      if (!confirm('Naozaj zmazať obe lokálne DB? Cloud dáta zostanú.')) return;
+      if (!await confirmModal({ title: 'Tvrdý reset', message: 'Naozaj zmazať obe lokálne DB? Cloud dáta zostanú.', confirmLabel: 'Zmazať lokálne DB', danger: true })) return;
       try {
         await Dexie.delete('spotrebaDB');
         await Dexie.delete('spotrebaDB_v2');
         location.reload();
       } catch(e) {
-        alert('Reset zlyhal: ' + e.message);
+        toast('Reset zlyhal: ' + e.message, true);
       }
     });
   }
