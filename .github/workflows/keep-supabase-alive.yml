@@ -1,8 +1,9 @@
 name: Keep Supabase alive
 
 # Free-tier Supabase uspí projekt po ~7 dňoch nečinnosti.
-# Tento workflow pošle každé 3 dni jeden ľahký request na REST API,
-# čo sa počíta ako aktivita a drží databázu "bdelú".
+# Tento workflow zavolá každé 3 dni RPC public.ping() (vracia 'pong'),
+# čo je úspešný (200) DB call → počíta sa ako aktivita a drží databázu "bdelú".
+# POZOR: RPC musí existovať — spusti raz supabase/keep_alive_ping.sql.
 
 on:
   schedule:
@@ -13,16 +14,19 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST
+      - name: Ping Supabase RPC
         run: |
-          code=$(curl -sS -o /dev/null -w "%{http_code}" \
-            "https://qgsfslcimhzpncbzelzx.supabase.co/rest/v1/households?select=id&limit=1" \
+          code=$(curl -sS -o /tmp/ping_body -w "%{http_code}" \
+            -X POST \
+            "https://qgsfslcimhzpncbzelzx.supabase.co/rest/v1/rpc/ping" \
+            -H "Content-Type: application/json" \
             -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc" \
             -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc")
-          echo "HTTP $code"
-          # 200 (prázdny výsledok kvôli RLS) je OK — request DB dosiahol.
-          # Fail len pri 5xx / sieťovej chybe.
-          if [ "$code" -ge 500 ] || [ "$code" -eq 000 ]; then
-            echo "Supabase ping zlyhal (HTTP $code)"
+          echo "HTTP $code — $(cat /tmp/ping_body)"
+          # Očakávame 200. Čokoľvek iné (401 = chýbajúci grant, 404 = RPC
+          # neexistuje, 5xx = výpadok) je chyba a musí workflow zhodiť,
+          # inak by zlyhaný keep-alive tíško "prechádzal" ako doteraz.
+          if [ "$code" -ne 200 ]; then
+            echo "Supabase keep-alive ping zlyhal (HTTP $code) — projekt sa môže pauznúť!"
             exit 1
           fi
