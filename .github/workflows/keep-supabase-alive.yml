@@ -42,6 +42,14 @@ jobs:
             echo "::error::Supabase DB ping zlyhal (HTTP ${code:-000}) — projekt sa môže pauznúť!"
             exit 1
           fi
+          # 200 samo o sebe nestačí: stará ping() (SELECT 'pong' bez zápisu) tiež
+          # vracia 200, takže by zelený build zakrýval, že sa nespustil
+          # keep_alive_ping.sql a pingujeme verziu, ktorá už raz zlyhala.
+          # Počítadlo v tele odpovede je dôkaz, že UPDATE reálne prebehol.
+          if ! grep -Eq '^"pong [0-9]+"$' /tmp/ping_body; then
+            echo "::error::Odpoveď nemá tvar 'pong <n>' — v DB je stará ping() bez zápisu. Spusti supabase/keep_alive_ping.sql v SQL Editore."
+            exit 1
+          fi
 
       - name: Ping Auth (GoTrue health) — informatívne
         run: |
