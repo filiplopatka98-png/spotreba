@@ -1,28 +1,56 @@
 -- =====================================================
--- Keep-alive ping RPC — drží free-tier Supabase "bdelý"
+-- Keep-alive ping — snaha držať free-tier Supabase "bdelý"
 -- =====================================================
--- Spusti v Supabase → SQL Editor (ako owner). Idempotentné (CREATE OR REPLACE).
+-- Spusti v Supabase → SQL Editor (ako owner). Idempotentné.
 -- Po spustení sa schéma reloadne cez NOTIFY na konci.
 --
--- Prečo:
---  GitHub Action (.github/workflows/keep-supabase-alive.yml) pinguje projekt,
---  aby sa nepauzoval po ~7 dňoch nečinnosti. Pôvodne pingoval REST /households
---  s anon kľúčom, lenže anon nemá GRANT na households → vracalo to 42501
---  "permission denied" (HTTP 401). Taký zamietnutý request Supabase nepočíta
---  ako aktivitu, takže projekt aj tak dostal pause warning.
---
---  Táto funkcia dá anonovi jeden legitímny, úspešný (200) DB call, ktorý sa
---  reálne vykoná v Postgrese → jednoznačne sa počíta ako aktivita.
---  Neexponuje žiadne dáta (vracia len konštantu 'pong').
+-- HISTÓRIA A REALITA (čítaj, než tomu začneš veriť):
+--  v1 pingovala REST /households s anon kľúčom → 42501 "permission denied"
+--      (HTTP 401). Zamietnutý request sa ako aktivita nepočíta.
+--  v2 pridala ping() = SELECT 'pong' → HTTP 200, ale projekt sa 2026-08-17
+--      AJ TAK PAUZOL. 15/15 behov success, posledný ping 7,5 h pred warning
+--      mailom. Dôvod: Supabase nepauzuje pri "no activity", ale pri
+--      "low activity in a 7-day period" — 15 mikro-requestov za mesiac je
+--      pod (nikde nedokumentovaným) prahom.
+--  v3 (toto) = best-effort pokus, NIE garancia:
+--      - workflow beží denne namiesto raz za 3 dni
+--      - ping() robí reálny UPDATE (WAL zápis, dead tuple, autovacuum),
+--        nie len vyhodnotenie konštanty bez dotyku na dáta
+--  Ak sa projekt pauzne znova, ping cestou už nejdeme — vtedy je na stole
+--  len Pro plán alebo vlastný backend.
 
--- ping() — vracia 'pong', volateľná anonom -----------------------------------
+-- Heartbeat tabuľka — jeden riadok, ktorý sa prepisuje ------------------------
+CREATE TABLE IF NOT EXISTS public.keep_alive (
+  id         smallint    PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  last_ping  timestamptz NOT NULL DEFAULT now(),
+  ping_count bigint      NOT NULL DEFAULT 0
+);
+
+INSERT INTO public.keep_alive (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- RLS zapnutá a ZÁMERNE bez policies → cez REST sa k tabuľke nikto nedostane.
+-- Zapisuje sa výhradne cez ping() nižšie, ktorá beží ako owner (SECURITY
+-- DEFINER) a RLS ju teda neobmedzuje. Tabuľke naschvál nedávame žiadny GRANT.
+ALTER TABLE public.keep_alive ENABLE ROW LEVEL SECURITY;
+
+-- ping() — zapíše heartbeat a vráti počítadlo, volateľná anonom -------------
 CREATE OR REPLACE FUNCTION public.ping()
-RETURNS TEXT
-LANGUAGE sql
+RETURNS text
+LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-  SELECT 'pong'::text;
+DECLARE
+  n bigint;
+BEGIN
+  UPDATE public.keep_alive
+     SET last_ping = now(),
+         ping_count = ping_count + 1
+   WHERE id = 1
+  RETURNING ping_count INTO n;
+
+  RETURN 'pong ' || n::text;
+END;
 $$;
 
 -- Grant execute pre anon (a authenticated nech to má tiež) --------------------

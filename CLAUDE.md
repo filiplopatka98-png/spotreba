@@ -64,6 +64,7 @@ HTTP server je nutný (nie `file://`) kvôli CORS pri Supabase auth cookies.
 2. **RLS policy referencujúca inú tabuľku** (cez `EXISTS` subquery) vyžaduje GRANT aj na referencovanú tabuľku — inak query zlyhá s 403 už pri vyhodnocovaní policy.
 3. Po zmene grantov: `NOTIFY pgrst, 'reload schema';` aby PostgREST okamžite obnovil cache (inak ~10s lag).
 4. Anon key (`SUPABASE_ANON_KEY` v `index.html`) je verejný — bezpečnosť rieši RLS.
+5. **Free-tier pausing** — Supabase pauzuje projekt pri „low activity" v 7-dňovom okne (nie pri nulovej aktivite; prah nie je dokumentovaný). Keep-alive cron `.github/workflows/keep-supabase-alive.yml` + RPC `public.ping()` (zapisuje do `public.keep_alive`) je **best-effort pokus, nie garancia** — verzia s pingom raz za 3 dni a RPC vracajúcou konštantu zlyhala (projekt pauznutý 2026-08-17 napriek 15/15 úspešným behom). Ak sa pauza zopakuje aj s denným zápisovým pingom, ping cestou už nejdeme — ostáva Pro plán alebo vlastný backend. Po odpauznutí treba raz spustiť `supabase/keep_alive_ping.sql`.
 
 ## Bezpečnosť
 

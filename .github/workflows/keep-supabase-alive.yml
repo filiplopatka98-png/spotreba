@@ -1,32 +1,56 @@
 name: Keep Supabase alive
 
-# Free-tier Supabase uspí projekt po ~7 dňoch nečinnosti.
-# Tento workflow zavolá každé 3 dni RPC public.ping() (vracia 'pong'),
-# čo je úspešný (200) DB call → počíta sa ako aktivita a drží databázu "bdelú".
-# POZOR: RPC musí existovať — spusti raz supabase/keep_alive_ping.sql.
+# Free-tier Supabase pauzuje projekty s "low activity" v 7-dňovom okne.
+#
+# POZOR — predchádzajúca verzia (1× za 3 dni, RPC vracajúca konštantu) NESTAČILA:
+# projekt sa 2026-08-17 pauzol napriek 15/15 úspešným behom (HTTP 200), posledný
+# ping bol 7,5 h pred warning mailom. Supabase prah nikde nedokumentuje
+# ("sufficient activity"), takže toto je best-effort pokus, NIE garancia:
+#   - beží denne namiesto raz za 3 dni
+#   - ping() robí reálny UPDATE do public.keep_alive (WAL zápis), nie len SELECT
+#   - navyše sa dotkne aj auth (GoTrue) endpointu
+# Ak sa projekt pauzne aj tak, ping cestou už nejdeme — ostáva Pro alebo vlastný backend.
+#
+# PREREKVIZITA: raz spusti supabase/keep_alive_ping.sql v Supabase SQL Editore.
 
 on:
   schedule:
-    - cron: '17 6 */3 * *'   # každé 3 dni o 06:17 UTC
-  workflow_dispatch:          # umožní spustiť ručne z GitHub UI (tab Actions)
+    - cron: '17 6 * * *'   # denne o 06:17 UTC (GitHub spúšťa s oneskorením, pri dennom behu nevadí)
+  workflow_dispatch:        # umožní spustiť ručne z GitHub UI (tab Actions)
 
 jobs:
   ping:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: https://qgsfslcimhzpncbzelzx.supabase.co
+      # anon key je verejný (je aj v index.html) — bezpečnosť rieši RLS
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc
     steps:
-      - name: Ping Supabase RPC
+      - name: Ping DB (RPC public.ping — reálny zápis)
         run: |
-          code=$(curl -sS -o /tmp/ping_body -w "%{http_code}" \
-            -X POST \
-            "https://qgsfslcimhzpncbzelzx.supabase.co/rest/v1/rpc/ping" \
+          code=$(curl -sS -o /tmp/ping_body -w "%{http_code}" --max-time 30 \
+            -X POST "$SUPABASE_URL/rest/v1/rpc/ping" \
             -H "Content-Type: application/json" \
-            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc" \
-            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnc2ZzbGNpbWh6cG5jYnplbHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDI2NjYsImV4cCI6MjA5Mjk3ODY2Nn0.uWbDdwSMev0LtvqzZwjezglysRQmgT6pQvIhrH0Hjxc")
-          echo "HTTP $code — $(cat /tmp/ping_body)"
-          # Očakávame 200. Čokoľvek iné (401 = chýbajúci grant, 404 = RPC
-          # neexistuje, 5xx = výpadok) je chyba a musí workflow zhodiť,
-          # inak by zlyhaný keep-alive tíško "prechádzal" ako doteraz.
-          if [ "$code" -ne 200 ]; then
-            echo "Supabase keep-alive ping zlyhal (HTTP $code) — projekt sa môže pauznúť!"
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "DB ping: HTTP ${code:-000} — $(cat /tmp/ping_body 2>/dev/null)"
+          # Očakávame 200 a telo 'pong <n>', kde n rastie s každým behom.
+          # 401 = chýbajúci GRANT, 404 = RPC neexistuje (nespustený SQL),
+          # 000 = projekt je už pauznutý (doména sa neresolvuje), 5xx = výpadok.
+          # Musí zhodiť workflow, inak by zlyhaný keep-alive ticho prechádzal.
+          if [ "${code:-000}" != "200" ]; then
+            echo "::error::Supabase DB ping zlyhal (HTTP ${code:-000}) — projekt sa môže pauznúť!"
             exit 1
+          fi
+
+      - name: Ping Auth (GoTrue health) — informatívne
+        run: |
+          code=$(curl -sS -o /tmp/auth_body -w "%{http_code}" --max-time 30 \
+            "$SUPABASE_URL/auth/v1/health" \
+            -H "apikey: $SUPABASE_ANON_KEY")
+          echo "Auth ping: HTTP ${code:-000} — $(cat /tmp/auth_body 2>/dev/null)"
+          # Len bonusový signál aktivity navyše. Build nezhadzuje — zdrojom pravdy
+          # o keep-alive je DB ping v kroku vyššie.
+          if [ "${code:-000}" != "200" ]; then
+            echo "::warning::Auth health vrátil HTTP ${code:-000} (nekritické)"
           fi
